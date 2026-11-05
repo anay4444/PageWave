@@ -18,6 +18,16 @@ Do not claim tests passed unless they were run. Distinguish a screenshot/user re
 
 This is the shared project record in GitHub, not a live synchronization of private Codex and Copilot chat transcripts. Both assistants can read and update the same file through their repository sessions, but they still need separate task sessions and Git handoffs.
 
+## 2026-11-05 — Compiled and published the complete shared history
+
+- Actor: Codex, following the user's request to consolidate the prior work and make it available to both Codex and GitHub Copilot.
+- Created PAGEWAVE_COMPLETE_HISTORY.md with the complete supplied source work log as an appendix, verified repository commit chronology, handoff guidance, project requirements, and a clear boundary around the screenshot-reported UI/UX changes.
+- Updated AGENTS.md, .github/copilot-instructions.md, PROJECT_CONTEXT.md, and AI_WORKLOG.md so both agents read and maintain this shared record after meaningful work.
+- Source-copy check: the appendix matches C:\Users\HP\Documents\Codex\Kokoro_Novel_Reader_Work_Log.md after newline normalization. The source file itself was not modified.
+- Documentation check: whitespace normalization removed trailing Markdown spaces and the extra final blank line from the copied appendix while preserving all source content. The final git diff --check passed. No application source was changed and no application tests were run for this documentation-only task.
+- Published to the public anay4444/PageWave repository on main in commit cbd0877 (Add complete shared PageWave history). At that point main was aligned with origin/main. Kokoro_Fix_Audit.md and Kokoro_Script_Diagnostics.md remained untracked and were not published.
+- The screenshot-reported UI commit 85a7d48 was still absent from local Git and remote main; only the screenshot's claimed checks/results are recorded, pending access to its actual diff.
+- Next: keep this file current after each meaningful Codex/Copilot action. Obtain and review the missing UI diff before integrating or publishing that work.
 ## Project at a glance
 
 PageWave is a Windows desktop reader that uses Kokoro ONNX for chapter-based text-to-speech. The repository contains the reader, a separate chapter-rendering worker, optional Vosk word alignment, a worker protocol, and reliability tests. Model files, voice data, Vosk model data, generated audio, and local analysis artifacts are excluded from Git.
@@ -97,7 +107,7 @@ The following appendix is copied from C:\Users\HP\Documents\Codex\Kokoro_Novel_R
 
 # Kokoro Novel Reader and Balabolka Investigation â€” Work Log
 
-**Prepared:** 5 November 2026  
+**Prepared:** 5 November 2026
 **Purpose:** Record the work discussed, commands shown in screenshots, observed failures, and current status.
 
 ## Scope and accuracy
@@ -254,4 +264,3 @@ The folder contained WAVs, .timing.json files, .words.json files, and .recognize
 ## Short summary
 
 The work moved from Python/Kokoro setup to a chapter-based reader, then voice selection, audio caching and output organization, progress indicators, preload behavior, and offline word alignment with Vosk. Vosk alignment worked well on some files and poorly on others. Separately, Balabolka was identified and its likely SAPI synchronization approach researched, but REA could not decompile it because Ghidra was not configured. This is a conversation-based record, not a source-control audit.
-
