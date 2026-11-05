@@ -15,7 +15,7 @@ PageWave is a Windows desktop reader that uses Kokoro ONNX for chapter-based tex
 - Preserve playback position and word highlighting through pause, resume, and seek.
 - Protect existing audio, timing, progress, and settings files during failures and replacement.
 - Work on one improvement at a time, with focused regression checks and periodic realistic smoke tests.
-- No UI/UX changes until the separate final UI/UX pass.
+- UI/UX work is reserved for the final pass and must not begin before the user starts that stage.
 
 ## Current technical shape
 
@@ -30,6 +30,18 @@ PageWave is a Windows desktop reader that uses Kokoro ONNX for chapter-based tex
 - Long chapter rendering can take several minutes; capture per-chapter elapsed time and use it to judge performance changes.
 - A failed paragraph has previously caused the chapter output to be discarded. Investigate failure handling and recovery without silently accepting incomplete audio or losing valid cached output.
 - Real-model integration is slow and opt-in; deterministic tests alone do not establish real inference speed or quality.
+
+## Future UI/UX collaboration plan
+
+When the user explicitly starts the final UI/UX pass:
+
+1. Use the KING router, when available, to freshly select a small set of relevant specialist skills and define measurable acceptance criteria.
+2. Have Codex and Copilot state their available context/work capacity. Assign the more constrained contributor a smaller, independent component; assign the contributor with more capacity the broader build or integration/review. Do not fabricate token counts.
+3. Agree on one design direction, divide work by non-overlapping components/files, and use separate branches or worktrees for parallel implementation.
+4. Integrate the work, review it as one experience, and check accessibility, responsive behavior, visual consistency, and regressions.
+5. Record decisions and results in this project context/work log. GitHub provides shared repo context, not automatic private chat-history synchronization. Wait for user direction before starting or publishing the final UI/UX pass.
+
+If one agent or KING is unavailable in a particular environment, state the limitation and use the shared criteria and handoff files so work remains reviewable.
 
 ## Baseline checks
 
