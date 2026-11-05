@@ -18,3 +18,12 @@ This is the concise, repository-shared handoff for Codex and GitHub Copilot. It 
 - Durable requirements captured: improve chapter preparation speed; retain background preparation across chapter navigation; preserve audio/timing/progress/settings data; do not change UI/UX before the user's separate final pass; work one improvement at a time and verify changes.
 - Verification: documentation and instruction files created; repository status and the public GitHub repository identity were checked. No application code or tests were changed in this handoff task.
 - Limitation: the products' private conversation histories are not automatically synchronized by GitHub. These repository files provide a shared project memory that both assistants can read.
+
+## 2026-11-05 — Final UI/UX pass started
+
+- Goal: polish the desktop reader without publishing UI changes before user review.
+- Design direction: retain the dark reading workspace while adding clearer PageWave hierarchy, grouped reading settings, stronger section labels, improved spacing, and responsive pane sizing.
+- Accessibility direction: add visible keyboard focus, predictable shortcuts for open/playback/chapter navigation, and bounded text-size controls that do not alter saved reading data.
+- Collaboration: visual work was completed in isolated branch `ui-design` by the broader contributor; accessibility work was completed in isolated branch `ui-accessibility` by the constrained contributor. Their commits were reviewed and integrated into `main` without publishing.
+- Checks: both contributors passed `py_compile` and `git diff --check`; the integrated code passed `py_compile`, `git diff --check`, and a headless Tk construction/shortcut/text-scale check under Xvfb. The suite ran 58 tests with 55 passing, 2 skipped, and 3 pre-existing failures/errors unrelated to this UI pass: missing `Kokoro_Script_Diagnostics.md`, an optional-module subprocess assertion, and settings-history normalization.
+- Remaining risks: visual polish and responsive behavior still need the user's interactive review; no publish action has been taken.

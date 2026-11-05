@@ -490,6 +490,8 @@ class NovelReader:
         self.generation_detail: ttk.Label | None = None
         self.generation_percent: ttk.Label | None = None
         self.generation_started = 0.0
+        self.text_font_family = "Segoe UI"
+        self.text_font_size = 13
         self._build_ui()
         if OPTIONAL_IMPORT_ERRORS:
             issue_text = "Some features have missing dependencies:\n\n" + "\n".join(OPTIONAL_IMPORT_ERRORS)
@@ -526,7 +528,8 @@ class NovelReader:
         style.configure("Title.TLabel", background=colors["window"], foreground=colors["text"], font=("Segoe UI", 17, "bold"))
         style.configure("Subtitle.TLabel", background=colors["window"], foreground=colors["muted"], font=("Segoe UI", 9))
         style.configure("Section.TLabel", background=colors["window"], foreground=colors["accent"], font=("Segoe UI", 9, "bold"))
-        style.configure("TButton", font=("Segoe UI", 10), padding=(10, 6), background=colors["button"], foreground="#f4f7fb")
+        style.configure("TButton", font=("Segoe UI", 10), padding=(10, 6), background=colors["button"],
+                        foreground="#f4f7fb", focuscolor="#58d6a3")
         style.map("TButton", background=[("active", colors["button_active"]), ("disabled", "#202b3a")])
         style.configure("TCheckbutton", background=colors["window"], foreground=colors["text"])
         style.configure("TCombobox", fieldbackground="#1c293b", background=colors["button"], foreground="#f4f7fb")
@@ -542,21 +545,23 @@ class NovelReader:
         self.file_label.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(2, 0))
         actions = ttk.Frame(top)
         actions.grid(row=0, column=1, rowspan=1, sticky="e")
-        ttk.Button(actions, text="Open novel", command=self.open_novel).pack(side="left")
+        self.open_btn = ttk.Button(actions, text="Open novel", command=self.open_novel, underline=0)
+        self.open_btn.pack(side="left")
         ttk.Button(actions, text="Kokoro folder…", command=self.choose_model_dir).pack(side="left", padx=(8, 0))
         ttk.Button(actions, text="Audio location…", command=self.choose_audio_folder).pack(side="left", padx=(8, 0))
 
         controls = ttk.LabelFrame(self.root, text="Reading settings", padding=(10, 7))
         controls.pack(fill="x", padx=14, pady=(0, 4))
         controls.columnconfigure(5, weight=1)
-        ttk.Label(controls, text="Voice").grid(row=0, column=0, sticky="w")
+        ttk.Label(controls, text="Voice", takefocus=False).grid(row=0, column=0, sticky="w")
         self.voice_label = tk.StringVar(value="Nicole (US female, soft)")
         voice_box = ttk.Combobox(controls, textvariable=self.voice_label, values=list(VOICE_OPTIONS), state="readonly", width=27)
         voice_box.grid(row=0, column=1, sticky="w", padx=(6, 14))
         voice_box.bind("<<ComboboxSelected>>", self._voice_changed)
-        ttk.Label(controls, text="Speed").grid(row=0, column=2, sticky="w")
+        ttk.Label(controls, text="Speed", takefocus=False).grid(row=0, column=2, sticky="w")
         self.speed = tk.StringVar(value="1.0")
-        ttk.Entry(controls, textvariable=self.speed, width=6).grid(row=0, column=3, sticky="w", padx=(6, 14))
+        speed_entry = ttk.Entry(controls, textvariable=self.speed, width=6)
+        speed_entry.grid(row=0, column=3, sticky="w", padx=(6, 14))
         self.auto_next = tk.BooleanVar(value=True)
         ttk.Checkbutton(controls, text="Auto-next chapter", variable=self.auto_next).grid(row=0, column=4, sticky="w", padx=(0, 14))
         self.model_status = ttk.Label(controls, text="Kokoro folder not checked", foreground="#d8ae5b", anchor="e")
@@ -573,8 +578,11 @@ class NovelReader:
         body.add(left, weight=1)
         body.add(right, weight=4)
         ttk.Label(left, text="CHAPTERS", style="Section.TLabel", padding=(2, 4)).pack(anchor="w")
-        self.chapter_list = tk.Listbox(left, activestyle="dotbox", exportselection=False)
-        self.chapter_list.configure(bg=colors["panel"], fg=colors["text"], selectbackground=colors["accent_dark"], selectforeground="white", borderwidth=0, highlightthickness=0, font=("Segoe UI", 10), relief="flat")
+        self.chapter_list = tk.Listbox(left, activestyle="dotbox", exportselection=False, takefocus=True)
+        self.chapter_list.configure(bg=colors["panel"], fg=colors["text"], selectbackground=colors["accent_dark"],
+                                    selectforeground="white", borderwidth=0, highlightthickness=2,
+                                    highlightbackground=colors["panel"], highlightcolor="#58d6a3",
+                                    font=("Segoe UI", 10), relief="flat")
         self.chapter_list.pack(fill="both", expand=True)
         self.chapter_list.bind("<<ListboxSelect>>", self.select_chapter)
         ttk.Label(left, text="NEXT CHAPTER", style="Section.TLabel", padding=(2, 12, 2, 2)).pack(anchor="w")
@@ -588,8 +596,12 @@ class NovelReader:
         ttk.Label(right, text="Click a paragraph to start there · the current paragraph is highlighted", padding=(4, 0, 4, 7), foreground=colors["muted"]).pack(anchor="w")
         text_frame = ttk.Frame(right)
         text_frame.pack(fill="both", expand=True)
-        self.text = tk.Text(text_frame, wrap="word", font=("Segoe UI", 13), padx=18, pady=14, spacing3=4, undo=False)
-        self.text.configure(bg=colors["editor"], fg=colors["text"], insertbackground="white", selectbackground="#315c78", relief="flat", highlightthickness=1, highlightbackground="#26364d", highlightcolor="#365174")
+        self.text = tk.Text(text_frame, wrap="word", font=(self.text_font_family, self.text_font_size),
+                            padx=18, pady=14, spacing3=4, undo=False, takefocus=True)
+        self.text.configure(bg=colors["editor"], fg=colors["text"], insertbackground="white",
+                            selectbackground="#315c78", relief="flat", borderwidth=0,
+                            highlightthickness=2, highlightbackground=colors["editor"],
+                            highlightcolor="#58d6a3")
         scroll = ttk.Scrollbar(text_frame, command=self.text.yview)
         self.text.configure(yscrollcommand=scroll.set, state="disabled")
         self.text.pack(side="left", fill="both", expand=True)
@@ -601,7 +613,7 @@ class NovelReader:
 
         bottom = ttk.Frame(self.root, padding=(14, 4, 14, 12))
         bottom.pack(fill="x")
-        self.play_btn = ttk.Button(bottom, text="▶ Play chapter", command=self.toggle_play)
+        self.play_btn = ttk.Button(bottom, text="▶ Play chapter", command=self.toggle_play, underline=2)
         self.play_btn.pack(side="left")
         ttk.Button(bottom, text="■ Stop", command=self.stop_audio).pack(side="left", padx=6)
         ttk.Button(bottom, text="◀ Previous chapter", command=lambda: self.step_chapter(-1)).pack(side="left", padx=(12, 4))
@@ -610,6 +622,48 @@ class NovelReader:
         self.progress.pack(side="left", fill="x", expand=True, padx=12)
         self.status = ttk.Label(bottom, text="Ready", width=34, anchor="e", foreground=colors["muted"])
         self.status.pack(side="right")
+        self.shortcut_hint = ttk.Label(
+            self.root,
+            text="Shortcuts: Ctrl+O open • Space play/stop • Left/Right chapter • Ctrl+Plus/Minus text size",
+            padding=(12, 0, 12, 6),
+            foreground=colors["muted"],
+            anchor="w",
+        )
+        self.shortcut_hint.pack(fill="x")
+        self._bind_accessibility_shortcuts()
+        self.open_btn.focus_set()
+
+    def _bind_accessibility_shortcuts(self):
+        """Provide predictable keyboard access without changing playback or saved data."""
+        self.root.bind_all("<Control-o>", lambda event: self._dispatch_shortcut(event, "open", self.open_novel))
+        self.root.bind_all("<space>", lambda event: self._dispatch_shortcut(event, "play", self.toggle_play))
+        self.root.bind_all("<Escape>", lambda event: self._dispatch_shortcut(event, "stop", self.stop_audio))
+        self.root.bind_all("<Left>", lambda event: self._dispatch_shortcut(event, "chapter", self.step_chapter, -1))
+        self.root.bind_all("<Right>", lambda event: self._dispatch_shortcut(event, "chapter", self.step_chapter, 1))
+        for sequence in ("<Control-plus>", "<Control-equal>"):
+            self.root.bind_all(sequence, lambda event: self._dispatch_shortcut(event, "scale", self._adjust_text_scale, 1))
+        self.root.bind_all("<Control-minus>", lambda event: self._dispatch_shortcut(event, "scale", self._adjust_text_scale, -1))
+        self.root.bind_all("<Control-0>", lambda event: self._dispatch_shortcut(event, "scale", self._reset_text_scale))
+
+    def _dispatch_shortcut(self, event, shortcut, callback, *args):
+        focused = self.root.focus_get()
+        focused_class = focused.winfo_class() if focused is not None else ""
+        if shortcut == "play" and focused_class in {"Entry", "TEntry", "TCombobox"}:
+            return None
+        if shortcut == "chapter" and focused_class in {"Entry", "TEntry", "TCombobox", "Text"}:
+            return None
+        callback(*args)
+        return "break"
+
+    def _adjust_text_scale(self, direction: int):
+        self.text_font_size = min(24, max(10, self.text_font_size + (2 * direction)))
+        self.text.configure(font=(self.text_font_family, self.text_font_size))
+        self.status.configure(text=f"Text size {self.text_font_size}px")
+
+    def _reset_text_scale(self):
+        self.text_font_size = 13
+        self.text.configure(font=(self.text_font_family, self.text_font_size))
+        self.status.configure(text="Text size reset")
 
     def open_novel(self):
         if self.preloading:
