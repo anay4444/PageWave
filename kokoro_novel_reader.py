@@ -1007,7 +1007,7 @@ class NovelReader:
         for folder in self._audio_search_folders():
             for name in names:
                 candidate = folder / name
-                if self._cached_audio_is_valid(candidate, allow_stale_completion=True):
+                if self._cached_audio_is_valid(candidate):
                     if not Path(str(candidate) + ".timing.json").exists():
                         self._create_estimated_timings(chapter_idx, candidate)
                     return candidate
@@ -1026,11 +1026,28 @@ class NovelReader:
             except OSError:
                 continue
             for candidate in candidates:
-                if self._cached_audio_is_valid(candidate):
-                    if not Path(str(candidate) + ".timing.json").exists():
+                if NovelReader._legacy_audio_is_usable(candidate):
+                    if not self._cached_audio_is_valid(candidate, allow_stale_completion=True):
+                        timing_path = Path(str(candidate) + ".timing.json")
+                        timing_path.unlink(missing_ok=True)
                         self._create_estimated_timings(chapter_idx, candidate)
                     return candidate
         return None
+
+    @staticmethod
+    def _legacy_audio_is_usable(audio_path: Path) -> bool:
+        if sf is None or not audio_path.is_file():
+            return False
+        try:
+            info = sf.info(audio_path)
+            return (
+                info.frames > 0
+                and info.samplerate > 0
+                and math.isfinite(float(info.duration))
+                and info.duration > 0
+            )
+        except (OSError, RuntimeError, ValueError, TypeError):
+            return False
 
     @staticmethod
     def _cached_audio_is_valid(audio_path: Path, allow_stale_completion: bool = False) -> bool:

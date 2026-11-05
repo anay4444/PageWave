@@ -54,3 +54,9 @@ This is the concise, repository-shared handoff for Codex and GitHub Copilot. It 
 - Root cause: legacy discovery reused the same strict completion-manifest validation as current caches, so older sidecars with stale identity/size/hash metadata were rejected.
 - Fix: only the unknown-old-hash fallback may now ignore stale completion metadata; it still requires a readable non-empty WAV and valid timing intervals. Current named caches remain strict.
 - Checks: stale-sidecar, unknown-hash, and moved-cache tests passed; compilation and `git diff --check` passed.
+
+## 2026-11-05 — Correct legacy fallback call site
+
+- Follow-up: the user still saw Chapter 83 render again. Code review found the fallback was accidentally still calling strict validation; the earlier stale-metadata change had been applied to the exact-name path instead.
+- Fix: exact current cache names are strict again; only unknown legacy `chapter_NNNN_*.wav` discovery uses readable-WAV validation and repairs timing metadata when needed.
+- Checks: legacy WAV, stale-sidecar, and unknown-hash tests passed; compilation and `git diff --check` passed.

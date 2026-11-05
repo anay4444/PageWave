@@ -470,6 +470,14 @@ class ReliabilityFixTests(unittest.TestCase):
                 output, allow_stale_completion=True
             ))
 
+    def test_legacy_discovery_uses_readable_wav_when_timing_sidecar_is_old(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "chapter.wav"
+            sf.write(output, np.ones(24000, dtype=np.float32), 24000)
+            timing = Path(str(output) + ".timing.json")
+            timing.write_text("not valid timing json", encoding="utf-8")
+            self.assertTrue(reader.NovelReader._legacy_audio_is_usable(output))
+
     def test_worker_removes_only_aged_matching_staging_files(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "chapter.wav"
