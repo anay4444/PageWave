@@ -40,3 +40,10 @@ This is the concise, repository-shared handoff for Codex and GitHub Copilot. It 
 - Follow-up: the first compatibility fix restored only 5 chapters because remaining files used hashes from an older cache format that could not be reconstructed from current chapter text.
 - Fix: after exact current/pre-identity/legacy names fail, PageWave now searches the configured novel audio folders for a complete `chapter_NNNN_*.wav` candidate and applies the same WAV/timing/commit validation before reuse. Cache counts use this fallback for the selected voice only, avoiding false attribution to every voice.
 - Checks: three cache-reuse tests passed, including an unknown-old-hash case; Python compilation and `git diff --check` passed.
+
+## 2026-11-05 — Reuse moved chapter files safely
+
+- Follow-up: chapters through 98 had WAVs and sidecars but were still skipped during preload.
+- Root cause: strict cache validation required the completion manifest's original `audio_mtime_ns`; moving/copying files can change that timestamp even when the WAV bytes remain identical.
+- Fix: validation now checks the current WAV size and SHA-256 plus timing SHA-256, while no longer requiring the original mtime. Modified audio is still rejected.
+- Checks: moved-cache, unknown-hash discovery, and pre-identity reuse tests passed; compilation and `git diff --check` passed.

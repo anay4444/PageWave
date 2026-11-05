@@ -433,6 +433,24 @@ class ReliabilityFixTests(unittest.TestCase):
             found = reader.NovelReader._find_cached_audio(app, 0, "af_sarah", "1.0")
             self.assertEqual(found, old_audio)
 
+    def test_cache_accepts_moved_audio_when_content_hashes_still_match(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "chapter.wav"
+            sf.write(output, np.ones(24000, dtype=np.float32), 24000)
+            timing = Path(str(output) + ".timing.json")
+            timing.write_text(json.dumps([{"text": "Saved sentence.", "start": 0.0, "end": 1.0}]), encoding="utf-8")
+            completion = {
+                "format": "kokoro-chapter-commit-v1",
+                "complete": True,
+                "renderer_identity": "old-renderer",
+                "audio_size": output.stat().st_size,
+                "audio_mtime_ns": output.stat().st_mtime_ns - 1,
+                "audio_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+                "timing_sha256": hashlib.sha256(timing.read_bytes()).hexdigest(),
+            }
+            Path(str(output) + ".complete.json").write_text(json.dumps(completion), encoding="utf-8")
+            self.assertTrue(reader.NovelReader._cached_audio_is_valid(output))
+
     def test_worker_removes_only_aged_matching_staging_files(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "chapter.wav"

@@ -1051,7 +1051,6 @@ class NovelReader:
                 if not completion_path.is_file() or not timing_path.is_file():
                     return False
                 completion = json.loads(completion_path.read_text(encoding="utf-8"))
-                audio_stat = audio_path.stat()
                 if (not isinstance(completion, dict)
                         or completion.get("format") != "kokoro-chapter-commit-v1"
                         or completion.get("complete") is not True
@@ -1059,8 +1058,8 @@ class NovelReader:
                         or not completion.get("renderer_identity")
                         or not isinstance(completion.get("audio_sha256"), str)
                         or len(completion["audio_sha256"]) != 64
-                        or completion.get("audio_size") != audio_stat.st_size
-                        or completion.get("audio_mtime_ns") != audio_stat.st_mtime_ns
+                        or completion.get("audio_size") != audio_path.stat().st_size
+                        or _sha256_path(audio_path) != completion["audio_sha256"]
                         or completion.get("timing_sha256") != hashlib.sha256(timing_path.read_bytes()).hexdigest()):
                     return False
             if not timing_path.exists():
