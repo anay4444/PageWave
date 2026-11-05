@@ -1011,6 +1011,25 @@ class NovelReader:
                     if not Path(str(candidate) + ".timing.json").exists():
                         self._create_estimated_timings(chapter_idx, candidate)
                     return candidate
+        # Older cache versions changed their hash inputs more than once.
+        # When the exact name is unavailable, reuse a complete chapter WAV
+        # from this novel's folder instead of synthesizing it again.
+        chapter_prefix = f"chapter_{chapter_idx + 1:04d}_"
+        for folder in self._audio_search_folders():
+            try:
+                candidates = sorted(
+                    (candidate for candidate in folder.glob(f"{chapter_prefix}*.wav")
+                     if candidate.is_file()),
+                    key=lambda candidate: candidate.stat().st_mtime_ns,
+                    reverse=True,
+                )
+            except OSError:
+                continue
+            for candidate in candidates:
+                if self._cached_audio_is_valid(candidate):
+                    if not Path(str(candidate) + ".timing.json").exists():
+                        self._create_estimated_timings(chapter_idx, candidate)
+                    return candidate
         return None
 
     @staticmethod
@@ -1103,6 +1122,13 @@ class NovelReader:
                 for chapter_idx, names in enumerate(chapter_names):
                     if any(self._cached_audio_is_valid(folder / name) for folder in folders for name in names):
                         ready.add(chapter_idx)
+                if voice_id == VOICE_OPTIONS.get(self.voice_label.get()):
+                    ready.update(
+                        chapter_idx for chapter_idx in range(len(chapters))
+                        if chapter_idx not in ready and self._find_cached_audio(
+                            chapter_idx, voice_id, speed_key
+                        ) is not None
+                    )
                 ready_by_voice[voice_id] = ready
             self._schedule_after(0, lambda: self._apply_audio_cache_counts(generation, novel_path, speed_key, ready_by_voice))
 
