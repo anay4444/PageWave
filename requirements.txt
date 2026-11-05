@@ -1,0 +1,8 @@
+numpy
+scipy
+kokoro-onnx
+sounddevice
+soundfile
+pymupdf
+vosk
+audioop-lts; python_version >= "3.13"
