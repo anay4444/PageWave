@@ -1,11 +1,15 @@
 # PageWave instructions for GitHub Copilot
 
-Before making changes, read `AGENTS.md`, `PROJECT_CONTEXT.md`, and the latest entries in `AI_WORKLOG.md`. Treat them as the shared project context and update the work log after each meaningful task so Codex can pick up the same decisions and progress.
+Before working, read PAGEWAVE_COMPLETE_HISTORY.md, AGENTS.md, PROJECT_CONTEXT.md, and the latest AI_WORKLOG.md entries. PAGEWAVE_COMPLETE_HISTORY.md is the detailed shared project record used by Copilot and Codex.
 
-Follow the repository's one-improvement-at-a-time workflow. Inspect existing code and Git status first, preserve user data and unrelated edits, and run focused checks before reporting results. Never add private chat transcripts, personal novel text, model files, generated audio, or local machine data to this public repository.
+After each meaningful action, code change, test run, review, or handoff, append a dated entry to PAGEWAVE_COMPLETE_HISTORY.md. Say who acted, why, which exact files changed, what was done, checks actually run and their results, remaining concerns, and branch/commit. Update AI_WORKLOG.md with a concise current status/next step; update PROJECT_CONTEXT.md for lasting requirements or technical facts. Never claim unrun checks passed.
 
-## UI/UX work
+Keep UI/UX work for the user's final pass. When the user starts it, use the KING router if available, coordinate with Codex on separate components/files and branches, and size assignments to each agent's stated available context. Give the more constrained contributor a smaller bounded task; do not fabricate live token counts or edit the same files concurrently. Integrate and review one coherent result for accessibility, responsive behavior, consistency, and regressions. Do not publish before user review and direction.
 
-UI/UX work is reserved for the final project pass. When the user starts it, use the KING skill router if available to select a small specialist skill cast. Coordinate with Codex using separate, non-overlapping assignments sized to each agent's stated available context: give the more constrained agent a smaller bounded task and the agent with more capacity the broader build or integration task. Do not invent or assume live token counts, and do not edit the same files concurrently. Agree on criteria, use separate branches/worktrees for parallel changes, and integrate and review one coherent result for accessibility, responsive behavior, consistency, and regressions. Keep the handoff in the repository files; private chat transcripts do not sync through GitHub. Wait for the user's direction to start the final UI/UX pass and to publish the finished result.
+The repository is public. Do not add private chat transcripts, credentials, model files, generated audio, or new personal novel text. GitHub shares project files and handoffs, not the assistants' private conversation histories.
 
-Use `python -m py_compile .\kokoro_novel_reader.py .\kokoro_paragraph_worker.py .\vosk_align_chapter.py` and `python -m unittest discover -s .\tests -v` as baseline checks when relevant. The real-model Kokoro integration test is opt-in and may take several minutes.
+Baseline checks when relevant:
+- python -m py_compile .\kokoro_novel_reader.py .\kokoro_paragraph_worker.py .\vosk_align_chapter.py
+- python -m unittest discover -s .\tests -v
+
+The real-model Kokoro integration is opt-in and may take several minutes.
