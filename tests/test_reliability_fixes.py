@@ -451,6 +451,25 @@ class ReliabilityFixTests(unittest.TestCase):
             Path(str(output) + ".complete.json").write_text(json.dumps(completion), encoding="utf-8")
             self.assertTrue(reader.NovelReader._cached_audio_is_valid(output))
 
+    def test_legacy_discovery_accepts_valid_audio_with_stale_completion_metadata(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "chapter.wav"
+            sf.write(output, np.ones(24000, dtype=np.float32), 24000)
+            timing = Path(str(output) + ".timing.json")
+            timing.write_text(json.dumps([{"text": "Saved sentence.", "start": 0.0, "end": 1.0}]), encoding="utf-8")
+            Path(str(output) + ".complete.json").write_text(json.dumps({
+                "format": "kokoro-chapter-commit-v1",
+                "complete": True,
+                "renderer_identity": "old",
+                "audio_size": 1,
+                "audio_sha256": "0" * 64,
+                "timing_sha256": "0" * 64,
+            }), encoding="utf-8")
+            self.assertFalse(reader.NovelReader._cached_audio_is_valid(output))
+            self.assertTrue(reader.NovelReader._cached_audio_is_valid(
+                output, allow_stale_completion=True
+            ))
+
     def test_worker_removes_only_aged_matching_staging_files(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "chapter.wav"

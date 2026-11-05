@@ -1007,7 +1007,7 @@ class NovelReader:
         for folder in self._audio_search_folders():
             for name in names:
                 candidate = folder / name
-                if self._cached_audio_is_valid(candidate):
+                if self._cached_audio_is_valid(candidate, allow_stale_completion=True):
                     if not Path(str(candidate) + ".timing.json").exists():
                         self._create_estimated_timings(chapter_idx, candidate)
                     return candidate
@@ -1033,7 +1033,7 @@ class NovelReader:
         return None
 
     @staticmethod
-    def _cached_audio_is_valid(audio_path: Path) -> bool:
+    def _cached_audio_is_valid(audio_path: Path, allow_stale_completion: bool = False) -> bool:
         """Reject unreadable WAVs and sidecars that record failed paragraphs."""
         if sf is None or not audio_path.is_file():
             return False
@@ -1047,7 +1047,7 @@ class NovelReader:
                 return False
             timing_path = Path(str(audio_path) + ".timing.json")
             completion_path = Path(str(audio_path) + ".complete.json")
-            if completion_path.exists():
+            if completion_path.exists() and not allow_stale_completion:
                 if not completion_path.is_file() or not timing_path.is_file():
                     return False
                 completion = json.loads(completion_path.read_text(encoding="utf-8"))

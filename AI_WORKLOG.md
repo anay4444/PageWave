@@ -47,3 +47,10 @@ This is the concise, repository-shared handoff for Codex and GitHub Copilot. It 
 - Root cause: strict cache validation required the completion manifest's original `audio_mtime_ns`; moving/copying files can change that timestamp even when the WAV bytes remain identical.
 - Fix: validation now checks the current WAV size and SHA-256 plus timing SHA-256, while no longer requiring the original mtime. Modified audio is still rejected.
 - Checks: moved-cache, unknown-hash discovery, and pre-identity reuse tests passed; compilation and `git diff --check` passed.
+
+## 2026-11-05 — Accept structurally valid legacy sidecars
+
+- Follow-up: the user still saw preload restart at Chapter 83 despite WAV, timing, and completion files through Chapter 98.
+- Root cause: legacy discovery reused the same strict completion-manifest validation as current caches, so older sidecars with stale identity/size/hash metadata were rejected.
+- Fix: only the unknown-old-hash fallback may now ignore stale completion metadata; it still requires a readable non-empty WAV and valid timing intervals. Current named caches remain strict.
+- Checks: stale-sidecar, unknown-hash, and moved-cache tests passed; compilation and `git diff --check` passed.
