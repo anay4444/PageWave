@@ -372,6 +372,37 @@ class ReliabilityFixTests(unittest.TestCase):
             found = reader.NovelReader._find_cached_audio(app, 0, "af_sarah", "1.0")
             self.assertEqual(found, legacy_audio)
 
+    def test_reader_reuses_pre_identity_cache_after_renderer_changes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            audio_folder = root / "audio"
+            audio_folder.mkdir()
+            app = SimpleNamespace(
+                novel_path=Path("book.txt"), chapters=[("Chapter 1", "Saved sentence.")],
+                audio_folder=audio_folder, output_root=root,
+                _renderer_cache_identity=lambda: "new-renderer-identity",
+                _book_folder_name=lambda: "book",
+                _audio_search_folders=lambda: [audio_folder],
+                _normalized_speed=lambda: "1.0",
+            )
+            app._legacy_cache_file = lambda idx, voice, speed: reader.NovelReader._legacy_cache_file(
+                app, idx, voice, speed
+            )
+            app._cache_names = lambda idx, voice, speed: reader.NovelReader._cache_names(
+                app, idx, voice, speed
+            )
+            app._cached_audio_is_valid = reader.NovelReader._cached_audio_is_valid
+            app._create_estimated_timings = lambda *_args: None
+            prior_name = reader.NovelReader._cache_names(app, 0, "af_sarah", "1.0")[1]
+            prior_audio = audio_folder / prior_name
+            sf.write(prior_audio, np.ones(24000, dtype=np.float32), 24000)
+            Path(str(prior_audio) + ".timing.json").write_text(
+                json.dumps([{"text": "Saved sentence.", "start": 0.0, "end": 1.0}]),
+                encoding="utf-8",
+            )
+            found = reader.NovelReader._find_cached_audio(app, 0, "af_sarah", "1.0")
+            self.assertEqual(found, prior_audio)
+
     def test_worker_removes_only_aged_matching_staging_files(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "chapter.wav"

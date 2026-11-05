@@ -926,8 +926,12 @@ class NovelReader:
         identity = self._renderer_cache_identity()
         cache_hash = hashlib.sha256((RENDER_CACHE_VERSION + self.novel_path.name + str(chapter_idx) + chapter_text + voice_id + speed_value + identity).encode("utf-8")).hexdigest()[:20]
         current_name = f"chapter_{chapter_idx + 1:04d}_{cache_hash}.wav"
+        # Releases before renderer identity was added used the same stable
+        # inputs except for the identity suffix. Keep those files reusable.
+        prior_hash = hashlib.sha256((RENDER_CACHE_VERSION + self.novel_path.name + str(chapter_idx) + chapter_text + voice_id + speed_value).encode("utf-8")).hexdigest()[:20]
+        prior_identity_name = f"chapter_{chapter_idx + 1:04d}_{prior_hash}.wav"
         legacy_name = self._legacy_cache_file(chapter_idx, voice_id, speed_value).name
-        return tuple(dict.fromkeys((current_name, legacy_name)))
+        return tuple(dict.fromkeys((current_name, prior_identity_name, legacy_name)))
 
     def _renderer_cache_identity(self) -> str:
         """Identify model and renderer bytes while hashing each unchanged file once per reader session."""

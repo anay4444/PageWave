@@ -27,3 +27,10 @@ This is the concise, repository-shared handoff for Codex and GitHub Copilot. It 
 - Collaboration: visual work was completed in isolated branch `ui-design` by the broader contributor; accessibility work was completed in isolated branch `ui-accessibility` by the constrained contributor. Their commits were reviewed and integrated into `main` without publishing.
 - Checks: both contributors passed `py_compile` and `git diff --check`; the integrated code passed `py_compile`, `git diff --check`, and a headless Tk construction/shortcut/text-scale check under Xvfb. The suite ran 58 tests with 55 passing, 2 skipped, and 3 pre-existing failures/errors unrelated to this UI pass: missing `Kokoro_Script_Diagnostics.md`, an optional-module subprocess assertion, and settings-history normalization.
 - Remaining risks: visual polish and responsive behavior still need the user's interactive review; no publish action has been taken.
+
+## 2026-11-05 — Preserve pre-identity chapter caches
+
+- User-visible issue: an existing audio folder contained chapter WAVs, but the reader reported 0 saved chapters and started loading again.
+- Root cause: cache filenames created before renderer/model identity was appended no longer matched the current identity-based filename, even though their chapter/text/voice/speed inputs were unchanged.
+- Fix: `_cache_names` now checks the pre-identity 20-character filename format before the older SHA-1 legacy format. Integrity validation remains unchanged.
+- Checks: targeted legacy and pre-identity cache tests passed; Python compilation and `git diff --check` passed.
