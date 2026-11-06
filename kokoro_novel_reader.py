@@ -461,6 +461,8 @@ class NovelReader:
         self._valid_timing_starts: list[float] = []
         self.word_spans: list[list[dict]] = []
         self.line_starts: list[float] = []
+        self._highlight_range: tuple[str, str] | None = None
+        self._highlight_word_range: tuple[str, str] | None = None
         self.chapter_list_labels: list[str] = []
         self.busy = False
         self.prefetching: set[int] = set()
@@ -895,6 +897,8 @@ class NovelReader:
         for line in self.lines:
             self.text.insert(tk.END, line + "\n\n")
         self.text.configure(state="disabled")
+        self._highlight_range = None
+        self._highlight_word_range = None
         self.chapter_list.selection_clear(0, tk.END)
         self.chapter_list.selection_set(self.chapter_idx)
         self._refresh_chapter_list()
@@ -2045,22 +2049,30 @@ class NovelReader:
             return [[] for _ in self.lines]
 
     def _highlight(self, index: int, elapsed: float | None = None):
-        self.text.configure(state="normal")
-        self.text.tag_remove("current", "1.0", tk.END)
-        self.text.tag_remove("current_word", "1.0", tk.END)
         # title is two lines; text paragraphs each use two display lines in the widget.
         start = f"{3 + index * 2}.0"
         end = f"{4 + index * 2}.0"
-        self.text.tag_add("current", start, end)
+        if self._highlight_range != (start, end):
+            if self._highlight_range is not None:
+                self.text.tag_remove("current", *self._highlight_range)
+            self.text.tag_add("current", start, end)
+            self._highlight_range = (start, end)
+
+        word_range = None
         if elapsed is not None and index < len(self.word_spans):
             for word in self.word_spans[index]:
                 if word["start"] <= elapsed < word["end"]:
-                    self.text.tag_add("current_word", word["tk_start"], word["tk_end"])
+                    word_range = (word["tk_start"], word["tk_end"])
                     break
+        if word_range != self._highlight_word_range:
+            if self._highlight_word_range is not None:
+                self.text.tag_remove("current_word", *self._highlight_word_range)
+            if word_range is not None:
+                self.text.tag_add("current_word", *word_range)
+            self._highlight_word_range = word_range
         box = self.text.bbox(start)
         if box is None or box[1] < 0 or box[1] > self.text.winfo_height():
             self.text.see(start)
-        self.text.configure(state="disabled")
 
     def close(self):
         if self._closing:

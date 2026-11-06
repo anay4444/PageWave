@@ -60,3 +60,10 @@ This is the concise, repository-shared handoff for Codex and GitHub Copilot. It 
 - Follow-up: the user still saw Chapter 83 render again. Code review found the fallback was accidentally still calling strict validation; the earlier stale-metadata change had been applied to the exact-name path instead.
 - Fix: exact current cache names are strict again; only unknown legacy `chapter_NNNN_*.wav` discovery uses readable-WAV validation and repairs timing metadata when needed.
 - Checks: legacy WAV, stale-sidecar, and unknown-hash tests passed; compilation and `git diff --check` passed.
+
+## 2026-11-06 — Prevent Tk GDI exhaustion during playback
+
+- User-visible issue: Windows showed `Tk_GetPixmap: Error from CreateDIBSection` while a long chapter was playing and preload had many chapters ready.
+- Root cause: playback called `_highlight` every 150 ms, removing highlight tags across the entire Text widget, toggling its state twice, and forcing full redraws of the long chapter.
+- Fix: highlight updates now remove/add only the previous paragraph and word ranges, and playback no longer toggles the Text widget state on every tick.
+- Checks: Python compilation, `git diff --check`, and a headless Tk incremental-highlight check passed.
