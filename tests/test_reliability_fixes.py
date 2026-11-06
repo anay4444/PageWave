@@ -163,6 +163,10 @@ class ReliabilityFixTests(unittest.TestCase):
     def test_preload_order_starts_at_selected_chapter_then_wraps(self):
         self.assertEqual(reader._preload_order([0, 1, 3, 4, 6], 3), [3, 4, 6, 0, 1])
 
+    def test_preload_window_is_bounded_to_nearby_chapters(self):
+        self.assertEqual(list(reader._preload_window(266, 90, 3)), [90, 91, 92, 93])
+        self.assertEqual(list(reader._preload_window(266, 264, 3)), [264, 265])
+
     def test_preload_elapsed_formatter_and_append_only_timing_log(self):
         self.assertEqual(reader._format_elapsed(421), "7m 01s")
         self.assertEqual(reader._format_elapsed(3661), "1h 01m 01s")

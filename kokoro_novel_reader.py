@@ -54,6 +54,7 @@ MAX_SPEED = 4.0
 AUDIO_DECODE_CHUNK_FRAMES = 262_144
 AUDIO_IN_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024
 KOKORO_WORKER_PRIORITY = getattr(subprocess, "ABOVE_NORMAL_PRIORITY_CLASS", 0)
+PRELOAD_LOOKAHEAD_CHAPTERS = 3
 
 VOICE_OPTIONS = {
     "Nicole (US female, soft)": "af_nicole",
@@ -84,6 +85,14 @@ def _preload_order(missing_indices: list[int], start_index: int) -> list[int]:
     """Prepare the selected chapter and forward chapters before filling earlier gaps."""
     return ([index for index in missing_indices if index >= start_index]
             + [index for index in missing_indices if index < start_index])
+
+
+def _preload_window(total_chapters: int, start_index: int,
+                    lookahead: int = PRELOAD_LOOKAHEAD_CHAPTERS) -> range:
+    """Bound background rendering to the current chapter and nearby chapters."""
+    first = max(0, start_index)
+    last = min(total_chapters, first + max(1, lookahead + 1))
+    return range(first, last)
 
 
 def _format_elapsed(seconds: float) -> str:
@@ -1486,7 +1495,9 @@ class NovelReader:
         self.prefetch_speed = speed_key
         self.preload_stop_btn.configure(state="normal")
         self._update_voice_status()
-        self.prefetch_info.configure(text="Checking saved chapter audio to choose where to continue…")
+        self.prefetch_info.configure(
+            text=f"Checking saved audio; preparing up to {PRELOAD_LOOKAHEAD_CHAPTERS} chapters ahead…"
+        )
         self.prefetch_bar.configure(maximum=len(self.chapters), value=0)
         self._refresh_chapter_list()
         errors = []
@@ -1513,7 +1524,7 @@ class NovelReader:
         def run_preload():
             jobs = []
             missing_indices = []
-            for idx in range(len(self.chapters)):
+            for idx in _preload_window(len(self.chapters), active_idx):
                 if cancel_event.is_set():
                     break
                 if (idx == active_idx and active_is_playing) or (idx == self.chapter_idx and (self.busy or self.playing)):
@@ -1524,8 +1535,8 @@ class NovelReader:
                         chapter, None, cached=True))
                     continue
                 missing_indices.append(idx)
-            # Start with the selected/resume chapter, then pre-render forward;
-            # return to earlier missing chapters only after reaching the end.
+            # Start with the selected/resume chapter, then render only a small
+            # forward window so long novels do not consume resources all at once.
             order = _preload_order(missing_indices, active_idx)
             if order:
                 first_chapter = order[0] + 1

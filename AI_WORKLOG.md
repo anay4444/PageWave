@@ -67,3 +67,10 @@ This is the concise, repository-shared handoff for Codex and GitHub Copilot. It 
 - Root cause: playback called `_highlight` every 150 ms, removing highlight tags across the entire Text widget, toggling its state twice, and forcing full redraws of the long chapter.
 - Fix: highlight updates now remove/add only the previous paragraph and word ranges, and playback no longer toggles the Text widget state on every tick.
 - Checks: Python compilation, `git diff --check`, and a headless Tk incremental-highlight check passed.
+
+## 2026-11-06 — Bound background chapter preloading
+
+- User-visible issue: long novels continued rendering distant chapters and consumed excessive memory/resources even after many chapters were already ready.
+- Root cause: background preload scanned and queued every missing chapter from the active position through the end of the novel.
+- Fix: preload now limits new rendering to the current chapter plus three upcoming chapters, while retaining cache reuse and the manual stop control. Status text reports the bounded preparation window.
+- Checks: bounded-window and preload-order regression tests passed; Python compilation and `git diff --check` passed. The broader reliability suite still has three unrelated pre-existing failures/errors involving a missing diagnostics file, optional-module subprocess behavior, and settings-history normalization.
