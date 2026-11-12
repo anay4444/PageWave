@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import bisect
+import ctypes
 import html
 import importlib.metadata
 import importlib.util
@@ -62,6 +63,7 @@ AUDIO_IN_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024
 KOKORO_WORKER_PRIORITY = getattr(subprocess, "ABOVE_NORMAL_PRIORITY_CLASS", 0)
 PRELOAD_LOOKAHEAD_CHAPTERS = 3
 PHONE_CAST_PORT = 8765
+PHONE_KEEP_AWAKE_FLAGS = 0x80000000 | 0x00000001
 
 VOICE_OPTIONS = {
     "Nicole (US female, soft)": "af_nicole",
@@ -139,9 +141,14 @@ class PhoneAudioServer:
                 def log_message(self, _format, *_args):
                     return
 
-            self._server = ThreadingHTTPServer(("0.0.0.0", PHONE_CAST_PORT), Handler)
-            self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
-            self._thread.start()
+            try:
+                self._server = ThreadingHTTPServer(("0.0.0.0", PHONE_CAST_PORT), Handler)
+                self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+                self._thread.start()
+                _set_phone_keep_awake(True)
+            except Exception:
+                self.stop()
+                raise
         return self.url()
 
     def url(self) -> str:
@@ -157,6 +164,7 @@ class PhoneAudioServer:
             server.server_close()
         if thread is not None and thread is not threading.current_thread():
             thread.join(timeout=2)
+        _set_phone_keep_awake(False)
 
     def _serve_page(self, handler):
         title = html.escape(str(self._title_getter() or "PageWave"))
@@ -190,9 +198,19 @@ let currentChapter = {int(initial_chapter) + 1 if initial_chapter is not None el
 async function loadNextChapter(automatic) {{
   try {{
     const chapterQuery = currentChapter === null ? "" : "&chapter=" + currentChapter;
-    const state = await fetch(stateUrl + chapterQuery + "&_=" + Date.now()).then(response => response.json());
-    if (!state.next_available) {{
-      status.textContent = "Next chapter is not cached yet.";
+    let state = null;
+    for (let attempt = 0; attempt < (automatic ? 30 : 1); attempt++) {{
+      state = await fetch(stateUrl + chapterQuery + "&_=" + Date.now()).then(response => response.json());
+      if (state.next_available) break;
+      if (!automatic) {{
+        status.textContent = "Next chapter is not cached yet.";
+        return;
+      }}
+      status.textContent = "Waiting for the next chapter to finish loading…";
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }}
+    if (!state || !state.next_available) {{
+      status.textContent = "Next chapter is still loading. Tap Next chapter when it is ready.";
       return;
     }}
     if (automatic && !state.auto_next) {{
@@ -299,6 +317,17 @@ def _local_network_address() -> str:
             return probe.getsockname()[0]
     except OSError:
         return "127.0.0.1"
+
+
+def _set_phone_keep_awake(enabled: bool) -> None:
+    """Prevent Windows system sleep while the local phone player is serving audio."""
+    if os.name != "nt":
+        return
+    try:
+        flags = PHONE_KEEP_AWAKE_FLAGS if enabled else 0x80000000
+        ctypes.windll.kernel32.SetThreadExecutionState(flags)
+    except (AttributeError, OSError):
+        return
 
 
 def _format_elapsed(seconds: float) -> str:
@@ -1721,7 +1750,7 @@ class NovelReader:
         )
         ttk.Label(
             dialog,
-            text="Keep PageWave open while listening. Use Stop server when finished; the link is private to your local network.",
+            text="Keep PageWave open while listening. PageWave will prevent Windows sleep while this server is active. Close it or use Stop server when finished.",
             wraplength=520,
         ).pack(anchor="w", padx=20)
         ttk.Button(dialog, text="Stop phone server", command=lambda: (self.phone_audio_server.stop(), dialog.destroy())).pack(

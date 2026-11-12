@@ -117,3 +117,9 @@ This is the concise, repository-shared handoff for Codex and GitHub Copilot. It 
 - The phone manual Next button worked, but the automatic transition could fail at the browser `play()` call after changing the audio source.
 - Fix: the phone player now listens for the next WAV's `canplay` event, calls `load()` explicitly, then starts playback from the current chapter's `ended` event. If the browser blocks it, the page reports that clearly instead of silently stopping.
 - Checks: phone transition test, compilation, and `git diff --check` passed.
+
+## 2026-11-12 — Keep phone playback awake and wait for next audio
+
+- Windows sleep would suspend the local server and browser stream; a sleeping PC cannot continue serving audio. The phone server now requests Windows execution state while active and restores normal sleep behavior when stopped or PageWave closes.
+- Phone Auto-next now polls for up to one minute when the next chapter is still being generated, explicitly loads the WAV, waits for `canplay`, and starts playback. It reports a clear fallback if the browser blocks autoplay.
+- Checks: phone serving/transition tests, sleep/auto-next source validation, compilation, and `git diff --check` passed.

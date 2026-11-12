@@ -229,6 +229,23 @@ class ReliabilityFixTests(unittest.TestCase):
             finally:
                 server.stop()
 
+    def test_phone_page_waits_for_next_cache_and_reports_keep_awake(self):
+        server = reader.PhoneAudioServer(lambda: None, lambda: "Chapter")
+        try:
+            request = SimpleNamespace(
+                send_response=mock.Mock(),
+                send_header=mock.Mock(),
+                end_headers=mock.Mock(),
+                wfile=SimpleNamespace(write=mock.Mock()),
+            )
+            server._state_getter = lambda _chapter=None: {"chapter": 0}
+            server._serve_page(request)
+            body = request.wfile.write.call_args[0][0]
+            self.assertIn(b"Waiting for the next chapter", body)
+            self.assertIn(b"setTimeout", body)
+        finally:
+            server.stop()
+
     def test_phone_state_can_serve_next_legacy_cache_file(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
