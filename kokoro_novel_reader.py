@@ -160,33 +160,57 @@ class PhoneAudioServer:
 
     def _serve_page(self, handler):
         title = html.escape(str(self._title_getter() or "PageWave"))
-        audio_url = html.escape(f"/audio?token={urllib.parse.quote(self._token)}", quote=True)
+        initial_state = self._state_getter() if self._state_getter else {}
+        initial_chapter = initial_state.get("chapter")
+        chapter_query = (
+            f"&chapter={int(initial_chapter) + 1}"
+            if initial_chapter is not None else ""
+        )
+        audio_url = html.escape(
+            f"/audio?token={urllib.parse.quote(self._token)}{chapter_query}", quote=True
+        )
         state_url = html.escape(f"/state?token={urllib.parse.quote(self._token)}", quote=True)
         body = f"""<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title} - PageWave</title>
 <style>body{{font:16px system-ui;background:#101827;color:#e6edf7;padding:24px}}
-h1{{font-size:1.2rem}}audio{{width:100%;margin-top:20px}}</style>
+ h1{{font-size:1.2rem}}audio{{width:100%;margin-top:20px}}
+button{{font:inherit;padding:8px 14px;margin-top:12px}}</style>
 <h1 id="title">{title}</h1><p>Playing from PageWave on this computer.</p>
 <audio id="audio" controls autoplay src="{audio_url}"></audio>
+<div><button id="next" type="button">Next chapter</button>
+<span id="status" aria-live="polite"></span></div>
 <script>
 const player = document.getElementById("audio");
 const title = document.getElementById("title");
+const status = document.getElementById("status");
+const nextButton = document.getElementById("next");
 const stateUrl = "{state_url}";
-let currentChapter = null;
-player.addEventListener("ended", async () => {{
+let currentChapter = {int(initial_chapter) + 1 if initial_chapter is not None else "null"};
+async function loadNextChapter(automatic) {{
   try {{
     const chapterQuery = currentChapter === null ? "" : "&chapter=" + currentChapter;
     const state = await fetch(stateUrl + chapterQuery + "&_=" + Date.now()).then(response => response.json());
-    if (!state.auto_next || !state.next_available) return;
+    if (!state.next_available) {{
+      status.textContent = "Next chapter is not cached yet.";
+      return;
+    }}
+    if (automatic && !state.auto_next) {{
+      status.textContent = "Auto-next is off.";
+      return;
+    }}
     player.src = state.next_url;
     title.textContent = state.next_title;
     currentChapter = state.next_chapter;
+    status.textContent = "Loading " + state.next_title + "…";
     await player.play();
+    status.textContent = "";
   }} catch (_error) {{
-    // The phone remains usable even if the next cached chapter is unavailable.
+    status.textContent = "Tap Play to start the next chapter.";
   }}
-}});
+}}
+nextButton.addEventListener("click", () => loadNextChapter(false));
+player.addEventListener("ended", () => loadNextChapter(true));
 </script>
 """
         encoded = body.encode("utf-8")

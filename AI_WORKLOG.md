@@ -99,3 +99,9 @@ This is the concise, repository-shared handoff for Codex and GitHub Copilot. It 
 - Follow-up: the phone page advanced once but the server continued reporting the desktop's original chapter, so later transitions could repeat or stop.
 - Fix: phone state requests now carry the phone's current chapter and resolve the following cached chapter independently of desktop navigation. Repeated transitions remain governed by the Auto-next setting.
 - Checks: repeated phone state/audio transition test, compilation, and `git diff --check` passed.
+
+## 2026-11-12 — Make phone chapter transitions visible
+
+- Follow-up: browser transition failures were swallowed, making phone Auto-next appear inactive.
+- Fix: the phone player now initializes its chapter explicitly, exposes a manual “Next chapter” button, reports uncached-next and browser-playback states, and still auto-advances only when Auto-next is enabled.
+- Checks: phone transition regression test, compilation, and `git diff --check` passed.
