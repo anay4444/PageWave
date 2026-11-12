@@ -226,6 +226,30 @@ class ReliabilityFixTests(unittest.TestCase):
             finally:
                 server.stop()
 
+    def test_phone_state_can_serve_next_legacy_cache_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            audio_folder = root / "audio"
+            audio_folder.mkdir()
+            next_path = audio_folder / "chapter_0002_old-hash.wav"
+            next_path.write_bytes(b"RIFF-next-audio")
+            app = SimpleNamespace(
+                chapter_idx=0, chapters=[("One", "one"), ("Two", "two")],
+                loaded_audio_voice_id="af_sarah", current_audio_path=None,
+                phone_audio_speed="1.0", speed=SimpleNamespace(get=lambda: "1.0"),
+                phone_auto_next_enabled=True,
+                audio_folder=audio_folder, output_root=root, novel_path=root / "book.txt",
+                audio_cache_chapters={"af_sarah": {0, 1}},
+                _audio_search_folders=lambda: [audio_folder],
+                _find_cached_audio=lambda *_args: None,
+                _legacy_audio_is_usable=lambda path: path == next_path,
+                _normalized_speed=lambda: "1.0",
+            )
+            app._find_phone_cached_audio = lambda chapter, voice: reader.NovelReader._find_phone_cached_audio(app, chapter, voice)
+            state = reader.NovelReader._phone_audio_state(app)
+            self.assertEqual(state["next_path"], next_path)
+            self.assertTrue(state["auto_next"])
+
     def test_generated_chapter_playback_honors_saved_resume_offset(self):
         played_offsets = []
         preload_calls = []

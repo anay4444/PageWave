@@ -105,3 +105,9 @@ This is the concise, repository-shared handoff for Codex and GitHub Copilot. It 
 - Follow-up: browser transition failures were swallowed, making phone Auto-next appear inactive.
 - Fix: the phone player now initializes its chapter explicitly, exposes a manual “Next chapter” button, reports uncached-next and browser-playback states, and still auto-advances only when Auto-next is enabled.
 - Checks: phone transition regression test, compilation, and `git diff --check` passed.
+
+## 2026-11-12 — Align phone cache lookup with desktop
+
+- The phone page reported “Next chapter is not cached yet” while PageWave showed all 266 chapters ready. The phone endpoint was using a narrower voice/speed filename lookup than the desktop cache scanner.
+- Fix: phone chapter resolution now tries normalized speed variants and the existing legacy `chapter_NNNN_*.wav` discovery fallback before reporting a chapter unavailable.
+- Checks: legacy phone-cache fallback, phone transition, compilation, and `git diff --check` passed.

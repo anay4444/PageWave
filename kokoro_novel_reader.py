@@ -1731,9 +1731,9 @@ class NovelReader:
         audio_path = self.current_audio_path if chapter == self.chapter_idx else None
         if voice_id and 0 <= chapter < len(self.chapters):
             if audio_path is None:
-                audio_path = self._find_cached_audio(chapter, voice_id, self.phone_audio_speed)
+                audio_path = self._find_phone_cached_audio(chapter, voice_id)
         if voice_id and chapter + 1 < len(self.chapters):
-            next_path = self._find_cached_audio(chapter + 1, voice_id, self.phone_audio_speed)
+            next_path = self._find_phone_cached_audio(chapter + 1, voice_id)
             next_title = self.chapters[chapter + 1][0]
         return {
             "chapter": chapter,
@@ -1742,6 +1742,23 @@ class NovelReader:
             "next_title": next_title,
             "auto_next": self.phone_auto_next_enabled,
         }
+
+    def _find_phone_cached_audio(self, chapter_idx: int, voice_id: str) -> Path | None:
+        """Resolve phone chapters using exact caches plus the desktop legacy fallback."""
+        for speed_value in (self.phone_audio_speed, self._normalized_speed(), str(self.speed.get())):
+            candidate = self._find_cached_audio(chapter_idx, voice_id, speed_value)
+            if candidate is not None:
+                return candidate
+        prefix = f"chapter_{chapter_idx + 1:04d}_"
+        for folder in self._audio_search_folders():
+            try:
+                candidates = sorted(folder.glob(f"{prefix}*.wav"), key=lambda item: item.stat().st_mtime_ns, reverse=True)
+            except OSError:
+                continue
+            for candidate in candidates:
+                if self._legacy_audio_is_usable(candidate):
+                    return candidate
+        return None
 
     def _start_novel_preload(self):
         if self.preloading or not self.chapters or not self.model_dir or not self.novel_path:
