@@ -80,3 +80,10 @@ This is the concise, repository-shared handoff for Codex and GitHub Copilot. It 
 - The Windows traceback was a `sounddevice.PortAudioError` from `sd.play`: PortAudio could not open the output stream (`MME error 1`), so the Tk callback raised an uncaught exception.
 - The preload control is now labeled “Stop loading future chapters”; it cancels the queue and active worker while preserving completed chapter files.
 - Playback now reports the output-device problem in a dialog and returns to the Play state instead of crashing the application.
+
+## 2026-11-12 — Add local phone playback
+
+- Added an opt-in local Wi-Fi phone player. PageWave serves only the currently loaded WAV through a tokenized local URL; no audio is uploaded to Google or another service.
+- The “Play on phone” dialog shows and copies the URL. The server stops automatically when PageWave closes, and completed audio/cache files are unaffected.
+- Same Google email is not required and does not itself enable Google Cast; Chromecast/Google TV hardware or a Cast receiver is required for native Google Cast.
+- Checks: phone HTML/WAV serving, playback error handling, preload stopping, compilation, and `git diff --check` passed.

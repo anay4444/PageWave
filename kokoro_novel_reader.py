@@ -2,19 +2,25 @@ from __future__ import annotations
 
 import hashlib
 import bisect
+import html
 import importlib.metadata
 import importlib.util
 import json
 import math
 import os
 import re
+import secrets
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import threading
 import time
 import tkinter as tk
+import urllib.parse
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -55,6 +61,7 @@ AUDIO_DECODE_CHUNK_FRAMES = 262_144
 AUDIO_IN_MEMORY_LIMIT_BYTES = 64 * 1024 * 1024
 KOKORO_WORKER_PRIORITY = getattr(subprocess, "ABOVE_NORMAL_PRIORITY_CLASS", 0)
 PRELOAD_LOOKAHEAD_CHAPTERS = 3
+PHONE_CAST_PORT = 8765
 
 VOICE_OPTIONS = {
     "Nicole (US female, soft)": "af_nicole",
@@ -93,6 +100,104 @@ def _preload_window(total_chapters: int, start_index: int,
     first = max(0, start_index)
     last = min(total_chapters, first + max(1, lookahead + 1))
     return range(first, last)
+
+
+class PhoneAudioServer:
+    """Serve only the currently loaded chapter to a phone on the local network."""
+
+    def __init__(self, audio_path_getter, title_getter):
+        self._audio_path_getter = audio_path_getter
+        self._title_getter = title_getter
+        self._token = secrets.token_urlsafe(18)
+        self._server = None
+        self._thread = None
+
+    @property
+    def running(self) -> bool:
+        return self._server is not None
+
+    def start(self) -> str:
+        if self._server is None:
+            owner = self
+
+            class Handler(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+                    if query.get("token", [None])[0] != owner._token:
+                        self.send_error(403, "Invalid phone link")
+                        return
+                    if urllib.parse.urlsplit(self.path).path == "/":
+                        owner._serve_page(self)
+                    elif urllib.parse.urlsplit(self.path).path == "/audio":
+                        owner._serve_audio(self)
+                    else:
+                        self.send_error(404)
+
+                def log_message(self, _format, *_args):
+                    return
+
+            self._server = ThreadingHTTPServer(("0.0.0.0", PHONE_CAST_PORT), Handler)
+            self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+            self._thread.start()
+        return self.url()
+
+    def url(self) -> str:
+        host = _local_network_address()
+        return f"http://{host}:{PHONE_CAST_PORT}/?token={urllib.parse.quote(self._token)}"
+
+    def stop(self):
+        server, thread = self._server, self._thread
+        self._server = None
+        self._thread = None
+        if server is not None:
+            server.shutdown()
+            server.server_close()
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=2)
+
+    def _serve_page(self, handler):
+        title = html.escape(str(self._title_getter() or "PageWave"))
+        audio_url = html.escape(f"/audio?token={urllib.parse.quote(self._token)}", quote=True)
+        body = f"""<!doctype html>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title} - PageWave</title>
+<style>body{{font:16px system-ui;background:#101827;color:#e6edf7;padding:24px}}
+h1{{font-size:1.2rem}}audio{{width:100%;margin-top:20px}}</style>
+<h1>{title}</h1><p>Playing from PageWave on this computer.</p>
+<audio controls autoplay src="{audio_url}"></audio>
+"""
+        encoded = body.encode("utf-8")
+        handler.send_response(200)
+        handler.send_header("Content-Type", "text/html; charset=utf-8")
+        handler.send_header("Content-Length", str(len(encoded)))
+        handler.end_headers()
+        handler.wfile.write(encoded)
+
+    def _serve_audio(self, handler):
+        path = self._audio_path_getter()
+        if path is None or not path.is_file():
+            handler.send_error(404, "No chapter audio is loaded")
+            return
+        try:
+            size = path.stat().st_size
+            with path.open("rb") as audio_file:
+                handler.send_response(200)
+                handler.send_header("Content-Type", "audio/wav")
+                handler.send_header("Content-Length", str(size))
+                handler.send_header("Accept-Ranges", "bytes")
+                handler.end_headers()
+                shutil.copyfileobj(audio_file, handler.wfile)
+        except (OSError, BrokenPipeError):
+            return
+
+
+def _local_network_address() -> str:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("192.0.2.1", 80))
+            return probe.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
 
 
 def _format_elapsed(seconds: float) -> str:
@@ -456,6 +561,11 @@ class NovelReader:
         self.chapters: list[tuple[str, str]] = []
         self.chapter_idx = 0
         self.audio = None
+        self.current_audio_path: Path | None = None
+        self.phone_audio_server = PhoneAudioServer(
+            lambda: self.current_audio_path,
+            lambda: f"Chapter {self.chapter_idx + 1} of {len(self.chapters)}",
+        )
         self.loaded_audio_voice_id: str | None = None
         self.samplerate = 0
         self._audio_load_generation = 0
@@ -629,6 +739,7 @@ class NovelReader:
         self.play_btn = ttk.Button(bottom, text="▶ Play chapter", command=self.toggle_play, underline=2)
         self.play_btn.pack(side="left")
         ttk.Button(bottom, text="■ Stop", command=self.stop_audio).pack(side="left", padx=6)
+        ttk.Button(bottom, text="📱 Play on phone", command=self.show_phone_player).pack(side="left", padx=(6, 12))
         ttk.Button(bottom, text="◀ Previous chapter", command=lambda: self.step_chapter(-1)).pack(side="left", padx=(12, 4))
         ttk.Button(bottom, text="Next chapter ▶", command=lambda: self.step_chapter(1)).pack(side="left")
         self.progress = ttk.Progressbar(bottom, mode="determinate", maximum=100)
@@ -1440,6 +1551,7 @@ class NovelReader:
                 raise RuntimeError("Cached audio content does not match its completion manifest; regenerate this chapter.")
             old_audio = self.audio
             self.audio, self.samplerate = audio, samplerate
+            self.current_audio_path = path
             if old_audio is not audio:
                 _release_audio_buffer(old_audio)
             self.loaded_audio_voice_id = voice_id or VOICE_OPTIONS.get(self.voice_label.get())
@@ -1466,12 +1578,53 @@ class NovelReader:
         except Exception as exc:
             if self.audio is audio:
                 self.audio = None
+                self.current_audio_path = None
                 self.loaded_audio_voice_id = None
             _release_audio_buffer(audio)
             messagebox.showerror("Audio error", str(exc))
 
     def _start_prefetch_next(self):
         self._start_novel_preload()
+
+    def show_phone_player(self):
+        if self.current_audio_path is None or not self.current_audio_path.is_file():
+            messagebox.showinfo("Phone playback", "Play or load a chapter on this computer first.")
+            return
+        try:
+            url = self.phone_audio_server.start()
+        except OSError as exc:
+            messagebox.showerror(
+                "Phone playback unavailable",
+                f"Could not open the local phone audio server on port {PHONE_CAST_PORT}.\n\n{exc}",
+            )
+            return
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Play PageWave on your phone")
+        dialog.geometry("560x260")
+        dialog.transient(self.root)
+        ttk.Label(dialog, text="On your phone, join the same Wi‑Fi network and open:", wraplength=520).pack(
+            anchor="w", padx=20, pady=(20, 8)
+        )
+        url_var = tk.StringVar(value=url)
+        url_entry = ttk.Entry(dialog, textvariable=url_var, state="readonly", width=72)
+        url_entry.pack(fill="x", padx=20)
+        ttk.Button(dialog, text="Copy link", command=lambda: self._copy_phone_url(url)).pack(
+            anchor="e", padx=20, pady=(8, 14)
+        )
+        ttk.Label(
+            dialog,
+            text="Keep PageWave open while listening. Use Stop server when finished; the link is private to your local network.",
+            wraplength=520,
+        ).pack(anchor="w", padx=20)
+        ttk.Button(dialog, text="Stop phone server", command=lambda: (self.phone_audio_server.stop(), dialog.destroy())).pack(
+            anchor="e", padx=20, pady=14
+        )
+
+    def _copy_phone_url(self, url: str):
+        self.root.clipboard_clear()
+        self.root.clipboard_append(url)
+        self.root.update()
+        self.status.configure(text="Phone player link copied")
 
     def _start_novel_preload(self):
         if self.preloading or not self.chapters or not self.model_dir or not self.novel_path:
@@ -2126,6 +2279,7 @@ class NovelReader:
         self.preloading = False
         self.preload_process = None
         self.preload_cancel_event = None
+        self.phone_audio_server.stop()
         self.stop_audio()
         self.root.destroy()
 

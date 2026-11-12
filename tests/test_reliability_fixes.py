@@ -1,4 +1,5 @@
 import contextlib
+import http.client
 import hashlib
 import io
 import json
@@ -10,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.parse
 import wave
 from pathlib import Path
 from types import SimpleNamespace
@@ -164,6 +166,29 @@ class ReliabilityFixTests(unittest.TestCase):
         self.assertFalse(app.playing)
         self.assertEqual(app.status.options["text"], "Audio output unavailable")
         showerror.assert_called_once()
+
+    def test_phone_audio_server_serves_private_player_and_wav(self):
+        with tempfile.TemporaryDirectory() as folder:
+            audio_path = Path(folder) / "chapter.wav"
+            audio_path.write_bytes(b"RIFF-test-audio")
+            server = reader.PhoneAudioServer(lambda: audio_path, lambda: "Chapter 4")
+            try:
+                url = server.start()
+                parsed = urllib.parse.urlsplit(url)
+                connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=2)
+                connection.request("GET", parsed.path + "?" + parsed.query)
+                page = connection.getresponse()
+                self.assertEqual(page.status, 200)
+                self.assertIn(b"Chapter 4", page.read())
+                connection.close()
+                connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=2)
+                connection.request("GET", "/audio?" + parsed.query)
+                audio = connection.getresponse()
+                self.assertEqual(audio.status, 200)
+                self.assertEqual(audio.read(), b"RIFF-test-audio")
+                connection.close()
+            finally:
+                server.stop()
 
     def test_generated_chapter_playback_honors_saved_resume_offset(self):
         played_offsets = []
