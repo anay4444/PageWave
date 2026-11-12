@@ -170,8 +170,17 @@ class ReliabilityFixTests(unittest.TestCase):
     def test_phone_audio_server_serves_private_player_and_wav(self):
         with tempfile.TemporaryDirectory() as folder:
             audio_path = Path(folder) / "chapter.wav"
+            next_path = Path(folder) / "next.wav"
             audio_path.write_bytes(b"RIFF-test-audio")
-            server = reader.PhoneAudioServer(lambda: audio_path, lambda: "Chapter 4")
+            next_path.write_bytes(b"RIFF-next-audio")
+            server = reader.PhoneAudioServer(
+                lambda: audio_path,
+                lambda: "Chapter 4",
+                lambda: {
+                    "chapter": 3, "audio_path": audio_path, "next_path": next_path,
+                    "next_title": "Chapter 5", "auto_next": True,
+                },
+            )
             try:
                 url = server.start()
                 parsed = urllib.parse.urlsplit(url)
@@ -186,6 +195,19 @@ class ReliabilityFixTests(unittest.TestCase):
                 audio = connection.getresponse()
                 self.assertEqual(audio.status, 200)
                 self.assertEqual(audio.read(), b"RIFF-test-audio")
+                connection.close()
+                connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=2)
+                connection.request("GET", "/state?" + parsed.query)
+                state = json.loads(connection.getresponse().read())
+                self.assertTrue(state["auto_next"])
+                self.assertTrue(state["next_available"])
+                self.assertIn("chapter=5", state["next_url"])
+                connection.close()
+                connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=2)
+                connection.request("GET", "/audio?" + parsed.query + "&chapter=5")
+                next_audio = connection.getresponse()
+                self.assertEqual(next_audio.status, 200)
+                self.assertEqual(next_audio.read(), b"RIFF-next-audio")
                 connection.close()
             finally:
                 server.stop()

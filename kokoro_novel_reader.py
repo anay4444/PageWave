@@ -103,11 +103,12 @@ def _preload_window(total_chapters: int, start_index: int,
 
 
 class PhoneAudioServer:
-    """Serve only the currently loaded chapter to a phone on the local network."""
+    """Serve loaded chapter audio and cached auto-next chapters locally."""
 
-    def __init__(self, audio_path_getter, title_getter):
+    def __init__(self, audio_path_getter, title_getter, state_getter=None):
         self._audio_path_getter = audio_path_getter
         self._title_getter = title_getter
+        self._state_getter = state_getter
         self._token = secrets.token_urlsafe(18)
         self._server = None
         self._thread = None
@@ -128,8 +129,10 @@ class PhoneAudioServer:
                         return
                     if urllib.parse.urlsplit(self.path).path == "/":
                         owner._serve_page(self)
+                    elif urllib.parse.urlsplit(self.path).path == "/state":
+                        owner._serve_state(self)
                     elif urllib.parse.urlsplit(self.path).path == "/audio":
-                        owner._serve_audio(self)
+                        owner._serve_audio(self, query)
                     else:
                         self.send_error(404)
 
@@ -158,13 +161,30 @@ class PhoneAudioServer:
     def _serve_page(self, handler):
         title = html.escape(str(self._title_getter() or "PageWave"))
         audio_url = html.escape(f"/audio?token={urllib.parse.quote(self._token)}", quote=True)
+        state_url = html.escape(f"/state?token={urllib.parse.quote(self._token)}", quote=True)
         body = f"""<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title} - PageWave</title>
 <style>body{{font:16px system-ui;background:#101827;color:#e6edf7;padding:24px}}
 h1{{font-size:1.2rem}}audio{{width:100%;margin-top:20px}}</style>
-<h1>{title}</h1><p>Playing from PageWave on this computer.</p>
-<audio controls autoplay src="{audio_url}"></audio>
+<h1 id="title">{title}</h1><p>Playing from PageWave on this computer.</p>
+<audio id="audio" controls autoplay src="{audio_url}"></audio>
+<script>
+const player = document.getElementById("audio");
+const title = document.getElementById("title");
+const stateUrl = "{state_url}";
+player.addEventListener("ended", async () => {{
+  try {{
+    const state = await fetch(stateUrl + "&_=" + Date.now()).then(response => response.json());
+    if (!state.auto_next || !state.next_available) return;
+    player.src = state.next_url;
+    title.textContent = state.next_title;
+    await player.play();
+  }} catch (_error) {{
+    // The phone remains usable even if the next cached chapter is unavailable.
+  }}
+}});
+</script>
 """
         encoded = body.encode("utf-8")
         handler.send_response(200)
@@ -173,8 +193,44 @@ h1{{font-size:1.2rem}}audio{{width:100%;margin-top:20px}}</style>
         handler.end_headers()
         handler.wfile.write(encoded)
 
-    def _serve_audio(self, handler):
+    def _serve_state(self, handler):
+        state = self._state_getter() if self._state_getter else {
+            "auto_next": False, "next_available": False
+        }
+        chapter = state.get("chapter")
+        next_path = state.get("next_path")
+        payload = {
+            "auto_next": bool(state.get("auto_next")),
+            "next_available": bool(next_path and next_path.is_file()),
+            "next_title": str(state.get("next_title") or ""),
+            "next_url": (
+                f"/audio?token={urllib.parse.quote(self._token)}&chapter={int(chapter) + 2}"
+                if next_path and next_path.is_file() and chapter is not None else ""
+            ),
+        }
+        encoded = json.dumps(payload).encode("utf-8")
+        handler.send_response(200)
+        handler.send_header("Content-Type", "application/json; charset=utf-8")
+        handler.send_header("Cache-Control", "no-store")
+        handler.send_header("Content-Length", str(len(encoded)))
+        handler.end_headers()
+        handler.wfile.write(encoded)
+
+    def _serve_audio(self, handler, query):
         path = self._audio_path_getter()
+        if self._state_getter and query.get("chapter", [None])[0] is not None:
+            try:
+                requested = int(query["chapter"][0]) - 1
+            except ValueError:
+                handler.send_error(400, "Invalid chapter")
+                return
+            state = self._state_getter()
+            if requested == state.get("chapter"):
+                path = state.get("audio_path")
+            elif requested == state.get("chapter", -1) + 1:
+                path = state.get("next_path")
+            else:
+                path = None
         if path is None or not path.is_file():
             handler.send_error(404, "No chapter audio is loaded")
             return
@@ -562,9 +618,12 @@ class NovelReader:
         self.chapter_idx = 0
         self.audio = None
         self.current_audio_path: Path | None = None
+        self.phone_audio_speed = "1.0"
+        self.phone_auto_next_enabled = True
         self.phone_audio_server = PhoneAudioServer(
             lambda: self.current_audio_path,
             lambda: f"Chapter {self.chapter_idx + 1} of {len(self.chapters)}",
+            self._phone_audio_state,
         )
         self.loaded_audio_voice_id: str | None = None
         self.samplerate = 0
@@ -685,6 +744,9 @@ class NovelReader:
         speed_entry.grid(row=0, column=3, sticky="w", padx=(6, 14))
         self.auto_next = tk.BooleanVar(value=True)
         ttk.Checkbutton(controls, text="Auto-next chapter", variable=self.auto_next).grid(row=0, column=4, sticky="w", padx=(0, 14))
+        self.auto_next.trace_add(
+            "write", lambda *_: setattr(self, "phone_auto_next_enabled", bool(self.auto_next.get()))
+        )
         self.model_status = ttk.Label(controls, text="Kokoro folder not checked", foreground="#d8ae5b", anchor="e")
         self.model_status.grid(row=0, column=5, sticky="e")
         self.voice_status = ttk.Label(self.root, text="", padding=(16, 1, 16, 7), foreground=colors["muted"], anchor="w", wraplength=1400, justify="left")
@@ -1552,6 +1614,7 @@ class NovelReader:
             old_audio = self.audio
             self.audio, self.samplerate = audio, samplerate
             self.current_audio_path = path
+            self.phone_audio_speed = self._normalized_speed()
             if old_audio is not audio:
                 _release_audio_buffer(old_audio)
             self.loaded_audio_voice_id = voice_id or VOICE_OPTIONS.get(self.voice_label.get())
@@ -1625,6 +1688,22 @@ class NovelReader:
         self.root.clipboard_append(url)
         self.root.update()
         self.status.configure(text="Phone player link copied")
+
+    def _phone_audio_state(self) -> dict:
+        chapter = self.chapter_idx
+        next_path = None
+        next_title = ""
+        voice_id = self.loaded_audio_voice_id
+        if voice_id and chapter + 1 < len(self.chapters):
+            next_path = self._find_cached_audio(chapter + 1, voice_id, self.phone_audio_speed)
+            next_title = self.chapters[chapter + 1][0]
+        return {
+            "chapter": chapter,
+            "audio_path": self.current_audio_path,
+            "next_path": next_path,
+            "next_title": next_title,
+            "auto_next": self.phone_auto_next_enabled,
+        }
 
     def _start_novel_preload(self):
         if self.preloading or not self.chapters or not self.model_dir or not self.novel_path:

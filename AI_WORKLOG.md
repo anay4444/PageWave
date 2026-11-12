@@ -87,3 +87,9 @@ This is the concise, repository-shared handoff for Codex and GitHub Copilot. It 
 - The “Play on phone” dialog shows and copies the URL. The server stops automatically when PageWave closes, and completed audio/cache files are unaffected.
 - Same Google email is not required and does not itself enable Google Cast; Chromecast/Google TV hardware or a Cast receiver is required for native Google Cast.
 - Checks: phone HTML/WAV serving, playback error handling, preload stopping, compilation, and `git diff --check` passed.
+
+## 2026-11-12 — Add phone auto-next
+
+- The first phone player served only the currently loaded chapter, so the browser could not honor PageWave's Auto-next setting.
+- The phone page now checks the next cached chapter when playback ends, loads it automatically when Auto-next is enabled, and leaves playback stopped when it is disabled or the next chapter is not ready.
+- Checks: phone current/next WAV and state endpoint tests, compilation, and `git diff --check` passed.
