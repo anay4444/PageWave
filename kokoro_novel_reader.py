@@ -177,9 +177,9 @@ class PhoneAudioServer:
  h1{{font-size:1.2rem}}audio{{width:100%;margin-top:20px}}
 button{{font:inherit;padding:8px 14px;margin-top:12px}}</style>
 <h1 id="title">{title}</h1><p>Playing from PageWave on this computer.</p>
-<audio id="audio" controls autoplay src="{audio_url}"></audio>
+<audio id="audio" controls autoplay preload="auto" src="{audio_url}"></audio>
 <div><button id="next" type="button">Next chapter</button>
-<span id="status" aria-live="polite"></span></div>
+<span id="status" aria-live="polite">Auto-next: ON</span></div>
 <script>
 const player = document.getElementById("audio");
 const title = document.getElementById("title");
@@ -203,10 +203,21 @@ async function loadNextChapter(automatic) {{
     title.textContent = state.next_title;
     currentChapter = state.next_chapter;
     status.textContent = "Loading " + state.next_title + "…";
+    await new Promise((resolve, reject) => {{
+      const ready = () => {{ cleanup(); resolve(); }};
+      const failed = () => {{ cleanup(); reject(new Error("Audio could not load")); }};
+      const cleanup = () => {{
+        player.removeEventListener("canplay", ready);
+        player.removeEventListener("error", failed);
+      }};
+      player.addEventListener("canplay", ready, {{ once: true }});
+      player.addEventListener("error", failed, {{ once: true }});
+      player.load();
+    }});
     await player.play();
     status.textContent = "";
   }} catch (_error) {{
-    status.textContent = "Tap Play to start the next chapter.";
+    status.textContent = "Next chapter loaded; tap Play if your browser blocked automatic playback.";
   }}
 }}
 nextButton.addEventListener("click", () => loadNextChapter(false));
