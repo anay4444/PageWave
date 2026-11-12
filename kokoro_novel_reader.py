@@ -130,7 +130,7 @@ class PhoneAudioServer:
                     if urllib.parse.urlsplit(self.path).path == "/":
                         owner._serve_page(self)
                     elif urllib.parse.urlsplit(self.path).path == "/state":
-                        owner._serve_state(self)
+                        owner._serve_state(self, query)
                     elif urllib.parse.urlsplit(self.path).path == "/audio":
                         owner._serve_audio(self, query)
                     else:
@@ -173,12 +173,15 @@ h1{{font-size:1.2rem}}audio{{width:100%;margin-top:20px}}</style>
 const player = document.getElementById("audio");
 const title = document.getElementById("title");
 const stateUrl = "{state_url}";
+let currentChapter = null;
 player.addEventListener("ended", async () => {{
   try {{
-    const state = await fetch(stateUrl + "&_=" + Date.now()).then(response => response.json());
+    const chapterQuery = currentChapter === null ? "" : "&chapter=" + currentChapter;
+    const state = await fetch(stateUrl + chapterQuery + "&_=" + Date.now()).then(response => response.json());
     if (!state.auto_next || !state.next_available) return;
     player.src = state.next_url;
     title.textContent = state.next_title;
+    currentChapter = state.next_chapter;
     await player.play();
   }} catch (_error) {{
     // The phone remains usable even if the next cached chapter is unavailable.
@@ -193,8 +196,14 @@ player.addEventListener("ended", async () => {{
         handler.end_headers()
         handler.wfile.write(encoded)
 
-    def _serve_state(self, handler):
-        state = self._state_getter() if self._state_getter else {
+    def _serve_state(self, handler, query):
+        requested_chapter = query.get("chapter", [None])[0]
+        try:
+            chapter_index = int(requested_chapter) - 1 if requested_chapter is not None else None
+        except ValueError:
+            handler.send_error(400, "Invalid chapter")
+            return
+        state = self._state_getter(chapter_index) if self._state_getter else {
             "auto_next": False, "next_available": False
         }
         chapter = state.get("chapter")
@@ -203,6 +212,7 @@ player.addEventListener("ended", async () => {{
             "auto_next": bool(state.get("auto_next")),
             "next_available": bool(next_path and next_path.is_file()),
             "next_title": str(state.get("next_title") or ""),
+            "next_chapter": int(chapter) + 2 if next_path and next_path.is_file() and chapter is not None else None,
             "next_url": (
                 f"/audio?token={urllib.parse.quote(self._token)}&chapter={int(chapter) + 2}"
                 if next_path and next_path.is_file() and chapter is not None else ""
@@ -1689,17 +1699,21 @@ class NovelReader:
         self.root.update()
         self.status.configure(text="Phone player link copied")
 
-    def _phone_audio_state(self) -> dict:
-        chapter = self.chapter_idx
+    def _phone_audio_state(self, requested_chapter: int | None = None) -> dict:
+        chapter = self.chapter_idx if requested_chapter is None else requested_chapter
         next_path = None
         next_title = ""
         voice_id = self.loaded_audio_voice_id
+        audio_path = self.current_audio_path if chapter == self.chapter_idx else None
+        if voice_id and 0 <= chapter < len(self.chapters):
+            if audio_path is None:
+                audio_path = self._find_cached_audio(chapter, voice_id, self.phone_audio_speed)
         if voice_id and chapter + 1 < len(self.chapters):
             next_path = self._find_cached_audio(chapter + 1, voice_id, self.phone_audio_speed)
             next_title = self.chapters[chapter + 1][0]
         return {
             "chapter": chapter,
-            "audio_path": self.current_audio_path,
+            "audio_path": audio_path,
             "next_path": next_path,
             "next_title": next_title,
             "auto_next": self.phone_auto_next_enabled,

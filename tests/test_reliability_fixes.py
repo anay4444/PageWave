@@ -171,15 +171,24 @@ class ReliabilityFixTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             audio_path = Path(folder) / "chapter.wav"
             next_path = Path(folder) / "next.wav"
+            third_path = Path(folder) / "third.wav"
             audio_path.write_bytes(b"RIFF-test-audio")
             next_path.write_bytes(b"RIFF-next-audio")
+            third_path.write_bytes(b"RIFF-third-audio")
+            def phone_state(chapter=None):
+                if chapter == 4:
+                    return {
+                        "chapter": 4, "audio_path": next_path, "next_path": third_path,
+                        "next_title": "Chapter 6", "auto_next": True,
+                    }
+                return {
+                    "chapter": 3, "audio_path": audio_path, "next_path": next_path,
+                    "next_title": "Chapter 5", "auto_next": True,
+                }
             server = reader.PhoneAudioServer(
                 lambda: audio_path,
                 lambda: "Chapter 4",
-                lambda: {
-                    "chapter": 3, "audio_path": audio_path, "next_path": next_path,
-                    "next_title": "Chapter 5", "auto_next": True,
-                },
+                phone_state,
             )
             try:
                 url = server.start()
@@ -208,6 +217,11 @@ class ReliabilityFixTests(unittest.TestCase):
                 next_audio = connection.getresponse()
                 self.assertEqual(next_audio.status, 200)
                 self.assertEqual(next_audio.read(), b"RIFF-next-audio")
+                connection.close()
+                connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=2)
+                connection.request("GET", "/state?" + parsed.query + "&chapter=5")
+                second_state = json.loads(connection.getresponse().read())
+                self.assertIn("chapter=6", second_state["next_url"])
                 connection.close()
             finally:
                 server.stop()
