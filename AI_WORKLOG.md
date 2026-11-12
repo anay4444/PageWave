@@ -74,3 +74,9 @@ This is the concise, repository-shared handoff for Codex and GitHub Copilot. It 
 - Root cause: background preload scanned and queued every missing chapter from the active position through the end of the novel.
 - Fix: preload now limits new rendering to the current chapter plus three upcoming chapters, while retaining cache reuse and the manual stop control. Status text reports the bounded preparation window.
 - Checks: bounded-window and preload-order regression tests passed; Python compilation and `git diff --check` passed. The broader reliability suite still has three unrelated pre-existing failures/errors involving a missing diagnostics file, optional-module subprocess behavior, and settings-history normalization.
+
+## 2026-11-12 — Stop future loading and handle unavailable audio output
+
+- The Windows traceback was a `sounddevice.PortAudioError` from `sd.play`: PortAudio could not open the output stream (`MME error 1`), so the Tk callback raised an uncaught exception.
+- The preload control is now labeled “Stop loading future chapters”; it cancels the queue and active worker while preserving completed chapter files.
+- Playback now reports the output-device problem in a dialog and returns to the Play state instead of crashing the application.

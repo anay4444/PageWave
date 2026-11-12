@@ -601,7 +601,9 @@ class NovelReader:
         self.prefetch_info.pack(fill="x")
         self.prefetch_bar = ttk.Progressbar(left, mode="determinate", maximum=100)
         self.prefetch_bar.pack(fill="x", padx=2, pady=(2, 8))
-        self.preload_stop_btn = ttk.Button(left, text="Stop background preload", command=self.stop_preload, state="disabled")
+        self.preload_stop_btn = ttk.Button(
+            left, text="Stop loading future chapters", command=self.stop_preload, state="disabled"
+        )
         self.preload_stop_btn.pack(anchor="e", padx=2, pady=(0, 8))
         ttk.Label(right, text="READING", style="Section.TLabel", padding=(4, 4)).pack(anchor="w")
         ttk.Label(right, text="Click a paragraph to start there · the current paragraph is highlighted", padding=(4, 0, 4, 7), foreground=colors["muted"]).pack(anchor="w")
@@ -1855,8 +1857,22 @@ class NovelReader:
             messagebox.showerror("Audio playback unavailable", "sounddevice could not be imported. Install it in the Python environment running this reader.")
             return
         start = min(len(self.audio), max(0, int(offset * self.samplerate)))
-        sd.stop()
-        sd.play(self.audio[start:], self.samplerate)
+        try:
+            sd.stop()
+            sd.play(self.audio[start:], self.samplerate)
+        except sd.PortAudioError as exc:
+            self.playing = False
+            self.started_at = None
+            self.play_btn.configure(text="▶ Play chapter")
+            self.status.configure(text="Audio output unavailable")
+            messagebox.showerror(
+                "Audio output unavailable",
+                "Windows could not open the selected audio output device.\n\n"
+                "Check that speakers/headphones are connected, then choose another "
+                "default output device in Windows and try Play again.\n\n"
+                f"PortAudio: {exc}",
+            )
+            return
         self.offset = offset
         self.started_at = time.monotonic()
         self.playing = True

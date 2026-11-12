@@ -136,6 +136,35 @@ class ReliabilityFixTests(unittest.TestCase):
             self.assertEqual(played["samplerate"], 20)
             audio._mmap.close()
 
+    def test_playback_reports_unavailable_portaudio_output_without_crashing(self):
+        class PortAudioError(Exception):
+            pass
+
+        portaudio_error = PortAudioError
+
+        class FailedDevice:
+            PortAudioError = portaudio_error
+
+            @staticmethod
+            def stop():
+                pass
+
+            @staticmethod
+            def play(_data, _samplerate):
+                raise PortAudioError("MME error 1")
+
+        app = SimpleNamespace(
+            audio=np.zeros((100, 1), dtype=np.float32), samplerate=20,
+            duration=5.0, offset=0.0, started_at=None, playing=False,
+            play_btn=DummyWidget(), status=DummyWidget(),
+        )
+        with mock.patch.object(reader, "sd", FailedDevice), \
+             mock.patch.object(reader.messagebox, "showerror") as showerror:
+            reader.NovelReader._play_from(app, 0.0)
+        self.assertFalse(app.playing)
+        self.assertEqual(app.status.options["text"], "Audio output unavailable")
+        showerror.assert_called_once()
+
     def test_generated_chapter_playback_honors_saved_resume_offset(self):
         played_offsets = []
         preload_calls = []
