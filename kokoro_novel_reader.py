@@ -741,6 +741,9 @@ class NovelReader:
         self.generation_process: subprocess.Popen | None = None
         self.preload_cancel_event: threading.Event | None = None
         self.preload_restart_requested = False
+        self.preload_cursor = 0
+        self.preload_chain_after = None
+        self.preload_chain_active = False
         self.preload_active_started_at: float | None = None
         self.preload_last_timing_text = ""
         self.generation_window: tk.Toplevel | None = None
@@ -956,6 +959,8 @@ class NovelReader:
         self.audio_cache_speed = None
         self.prefetch_ready.clear()
         self.prefetching.clear()
+        self.preload_cursor = self.chapter_idx
+        self.preload_chain_active = False
         record = self._novel_record()
         self.audio_folder = Path(record.get("audio_folder") or (self.output_root / self._book_folder_name()))
         self._refresh_audio_cache_counts()
@@ -1862,12 +1867,20 @@ class NovelReader:
         return None
 
     def _start_novel_preload(self):
-        if self.preloading or not self.chapters or not self.model_dir or not self.novel_path:
+        if self.preloading:
+            return
+        self.preload_chain_after = None
+        if not self.preload_chain_active and self.preload_cursor >= len(self.chapters):
+            return
+        if not self.chapters or not self.model_dir or not self.novel_path:
             return
         if not (self.model_dir / "kokoro-v1.0.onnx").is_file() or not (self.model_dir / "voices-v1.0.bin").is_file():
             return
         cancel_event = threading.Event()
-        active_idx = self.chapter_idx
+        active_idx = max(self.chapter_idx, min(self.preload_cursor, len(self.chapters) - 1))
+        window_end = min(len(self.chapters), active_idx + PRELOAD_LOOKAHEAD_CHAPTERS + 1)
+        self.preload_cursor = window_end
+        self.preload_chain_active = True
         active_is_playing = self.busy or self.playing
         voice_id = VOICE_OPTIONS[self.voice_label.get()]
         speed = _bounded_float(self.speed.get(), MIN_SPEED, MAX_SPEED)
@@ -1886,7 +1899,7 @@ class NovelReader:
         self.preload_stop_btn.configure(state="normal")
         self._update_voice_status()
         self.prefetch_info.configure(
-            text=f"Checking saved audio; preparing up to {PRELOAD_LOOKAHEAD_CHAPTERS} chapters ahead…"
+            text=f"Continuously loading future chapters in windows of {PRELOAD_LOOKAHEAD_CHAPTERS + 1}…"
         )
         self.prefetch_bar.configure(maximum=len(self.chapters), value=0)
         self._refresh_chapter_list()
@@ -2063,9 +2076,22 @@ class NovelReader:
             self.prefetch_info.configure(text=f"Could not start background preload: {exc}")
 
     def stop_preload(self):
-        if not self.preloading or self.preload_cancel_event is None:
+        chain_after = getattr(self, "preload_chain_after", None)
+        if not self.preloading and chain_after is None:
             return
         self.preload_restart_requested = False
+        self.preload_chain_active = False
+        if chain_after is not None:
+            try:
+                self.root.after_cancel(chain_after)
+            except tk.TclError:
+                pass
+            self.preload_chain_after = None
+        if self.preload_cancel_event is None:
+            self.preload_state = "cancelled"
+            self.preload_stop_btn.configure(state="disabled")
+            self.prefetch_info.configure(text="Future chapter loading stopped")
+            return
         self.preload_state = "cancelled"
         self.preload_cancel_event.set()
         process = self.preload_process
@@ -2189,12 +2215,16 @@ class NovelReader:
         restart = self.preload_restart_requested
         self.preloading = False
         self.preload_state = "cancelled" if cancelled else ("failed" if errors else "complete")
-        self.preload_stop_btn.configure(state="disabled")
+        preload_cursor = getattr(self, "preload_cursor", len(self.chapters))
+        self.preload_stop_btn.configure(
+            state="normal" if not cancelled and preload_cursor < len(self.chapters) else "disabled"
+        )
         self.prefetching.clear()
         self.preload_process = None
         self.preload_cancel_event = None
         self.preload_restart_requested = False
         if cancelled:
+            self.preload_chain_active = False
             self._refresh_chapter_list()
             if restart:
                 self.prefetch_info.configure(text=f"Restarting preload with {self.voice_label.get()}… saved chapter files will be reused")
@@ -2203,6 +2233,16 @@ class NovelReader:
                 self.prefetch_info.configure(text="Background preload stopped; completed audio files were kept")
             self._update_voice_status()
             return
+        if getattr(self, "preload_chain_active", False) and preload_cursor < len(self.chapters):
+            self.preload_state = "running"
+            self.prefetch_info.configure(
+                text=f"Continuously loading future chapters… next window starts at Chapter {preload_cursor + 1}"
+            )
+            self.preload_chain_after = self._schedule_after(
+                250, self._start_novel_preload
+            )
+            return
+        self.preload_chain_active = False
         if errors:
             self.prefetch_info.configure(text=f"Preload finished with {len(errors)} chapter error(s). See error details.")
             messagebox.showwarning("Some chapters need attention", "Preloading reached the end, but some chapters failed:\n\n" + "\n\n".join(errors[:8]))

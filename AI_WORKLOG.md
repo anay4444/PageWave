@@ -129,3 +129,10 @@ This is the concise, repository-shared handoff for Codex and GitHub Copilot. It 
 - When “Play on phone” starts, PageWave now schedules the supplied `Turn_Off_Screen_without_lock.lnk` to run after five minutes. It searches beside PageWave, the working directory, Desktop, and Downloads.
 - If the shortcut is not found on Windows, PageWave runs the same PowerShell display-off command directly. Stopping the phone server or closing PageWave cancels the timer; this affects only the display, not system sleep or locking.
 - Checks: compilation, diff validation, and phone playback regression tests passed.
+
+## 2026-11-13 — Keep future loading continuous
+
+- User requirement: future chapter loading must continue instead of stopping after the first bounded window, until the user clicks “Stop loading future chapters.”
+- Fix: bounded preload windows now chain forward automatically using a cursor. Each window remains limited to four chapters for memory safety, then the next window starts until all chapters are ready or the user cancels. The stop action also cancels a queued next window.
+- Other improvement opportunities: add a visible pause/resume state, configurable lookahead size, retry failed chapters with backoff, prioritize the next phone chapter, expose estimated remaining time, add an explicit “keep computer awake” toggle, and provide a tray/background mode.
+- Checks: preload lifecycle regression tests, compilation, and `git diff --check` passed.
