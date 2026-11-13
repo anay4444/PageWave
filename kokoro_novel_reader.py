@@ -208,7 +208,7 @@ button{{font:inherit;padding:8px 14px;margin-top:12px}}</style>
  <div>Your browser needs one tap before it can start the next chapter automatically.</div>
  <button id="unlock" type="button">Enable Auto-next</button>
 </div>
-<div><button id="next" type="button" style="display:none">Next chapter</button>
+<div><button id="next" type="button">Next chapter</button>
 <span id="status" aria-live="polite">Auto-next is preparing the next chapter…</span></div>
 <div style="margin-top:18px">Sleep timer:
 <select id="sleep"><option value="0">Off</option>
@@ -289,7 +289,7 @@ async function loadNextChapter(automatic) {{
     autoplayPrompt.style.display = "none";
     status.textContent = "";
   }} catch (_error) {{
-    status.textContent = "Browser blocked Auto-next. Tap Enable Auto-next once.";
+    status.textContent = "Chrome blocked automatic playback. Tap Enable Auto-next or Next chapter.";
     autoplayPrompt.style.display = "block";
     nextButton.style.display = "inline-block";
   }}
@@ -1992,7 +1992,7 @@ class NovelReader:
         chapter = self.chapter_idx if requested_chapter is None else requested_chapter
         next_path = None
         next_title = ""
-        voice_id = self.loaded_audio_voice_id
+        voice_id = self.loaded_audio_voice_id or VOICE_OPTIONS.get(self.voice_label.get())
         audio_path = self.current_audio_path if chapter == self.chapter_idx else None
         if voice_id and 0 <= chapter < len(self.chapters):
             if audio_path is None:
