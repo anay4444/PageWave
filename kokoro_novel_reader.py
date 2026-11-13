@@ -64,6 +64,8 @@ KOKORO_WORKER_PRIORITY = getattr(subprocess, "ABOVE_NORMAL_PRIORITY_CLASS", 0)
 PRELOAD_LOOKAHEAD_CHAPTERS = 3
 PHONE_CAST_PORT = 8765
 PHONE_KEEP_AWAKE_FLAGS = 0x80000000 | 0x00000001
+PHONE_SCREEN_OFF_DELAY_MS = 5 * 60 * 1000
+PHONE_SCREEN_OFF_SHORTCUT_NAME = "Turn_Off_Screen_without_lock.lnk"
 
 VOICE_OPTIONS = {
     "Nicole (US female, soft)": "af_nicole",
@@ -699,6 +701,8 @@ class NovelReader:
             lambda: f"Chapter {self.chapter_idx + 1} of {len(self.chapters)}",
             self._phone_audio_state,
         )
+        self.phone_screen_off_after = None
+        self.phone_screen_off_shortcut: Path | None = None
         self.loaded_audio_voice_id: str | None = None
         self.samplerate = 0
         self._audio_load_generation = 0
@@ -1735,6 +1739,7 @@ class NovelReader:
                 f"Could not open the local phone audio server on port {PHONE_CAST_PORT}.\n\n{exc}",
             )
             return
+        self._schedule_phone_screen_off()
         dialog = tk.Toplevel(self.root)
         dialog.title("Play PageWave on your phone")
         dialog.geometry("560x260")
@@ -1753,7 +1758,7 @@ class NovelReader:
             text="Keep PageWave open while listening. PageWave will prevent Windows sleep while this server is active. Close it or use Stop server when finished.",
             wraplength=520,
         ).pack(anchor="w", padx=20)
-        ttk.Button(dialog, text="Stop phone server", command=lambda: (self.phone_audio_server.stop(), dialog.destroy())).pack(
+        ttk.Button(dialog, text="Stop phone server", command=lambda: (self._cancel_phone_screen_off(), self.phone_audio_server.stop(), dialog.destroy())).pack(
             anchor="e", padx=20, pady=14
         )
 
@@ -1762,6 +1767,62 @@ class NovelReader:
         self.root.clipboard_append(url)
         self.root.update()
         self.status.configure(text="Phone player link copied")
+
+    def _find_phone_screen_off_shortcut(self) -> Path | None:
+        candidates = [
+            Path(__file__).with_name(PHONE_SCREEN_OFF_SHORTCUT_NAME),
+            Path.cwd() / PHONE_SCREEN_OFF_SHORTCUT_NAME,
+            Path.home() / "Desktop" / PHONE_SCREEN_OFF_SHORTCUT_NAME,
+            Path.home() / "Downloads" / PHONE_SCREEN_OFF_SHORTCUT_NAME,
+        ]
+        return next((path for path in candidates if path.is_file()), None)
+
+    def _schedule_phone_screen_off(self):
+        self._cancel_phone_screen_off()
+        shortcut = self._find_phone_screen_off_shortcut()
+        if shortcut is None:
+            if os.name != "nt":
+                self.status.configure(text=f"Phone playback active; {PHONE_SCREEN_OFF_SHORTCUT_NAME} was not found")
+                return
+            self.status.configure(text="Phone playback active; screen will turn off in 5 minutes")
+        self.phone_screen_off_shortcut = shortcut
+        self.phone_screen_off_after = self._schedule_after(
+            PHONE_SCREEN_OFF_DELAY_MS, self._run_phone_screen_off_shortcut
+        )
+        self.status.configure(text="Phone playback active; screen will turn off in 5 minutes")
+
+    def _cancel_phone_screen_off(self):
+        if self.phone_screen_off_after is not None:
+            try:
+                self.root.after_cancel(self.phone_screen_off_after)
+            except tk.TclError:
+                pass
+        self.phone_screen_off_after = None
+        self.phone_screen_off_shortcut = None
+
+    def _run_phone_screen_off_shortcut(self):
+        self.phone_screen_off_after = None
+        shortcut = self.phone_screen_off_shortcut
+        if not self.phone_audio_server.running or shortcut is None:
+            return
+        try:
+            if shortcut is not None:
+                os.startfile(str(shortcut))
+            elif os.name == "nt":
+                command = (
+                    "Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] "
+                    "public static extern int PostMessage(int a, int b, int c, int d);' "
+                    "-Name f -PassThru)::PostMessage(-1, 0x112, 0xF170, 2)"
+                )
+                subprocess.Popen(
+                    ["powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-Command", command],
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            else:
+                return
+            self.status.configure(text="Phone playback active; screen turned off after 5 minutes")
+        except OSError as exc:
+            self.status.configure(text=f"Could not run screen-off shortcut: {exc}")
 
     def _phone_audio_state(self, requested_chapter: int | None = None) -> dict:
         chapter = self.chapter_idx if requested_chapter is None else requested_chapter
@@ -2453,6 +2514,7 @@ class NovelReader:
         self.preloading = False
         self.preload_process = None
         self.preload_cancel_event = None
+        self._cancel_phone_screen_off()
         self.phone_audio_server.stop()
         self.stop_audio()
         self.root.destroy()

@@ -123,3 +123,9 @@ This is the concise, repository-shared handoff for Codex and GitHub Copilot. It 
 - Windows sleep would suspend the local server and browser stream; a sleeping PC cannot continue serving audio. The phone server now requests Windows execution state while active and restores normal sleep behavior when stopped or PageWave closes.
 - Phone Auto-next now polls for up to one minute when the next chapter is still being generated, explicitly loads the WAV, waits for `canplay`, and starts playback. It reports a clear fallback if the browser blocks autoplay.
 - Checks: phone serving/transition tests, sleep/auto-next source validation, compilation, and `git diff --check` passed.
+
+## 2026-11-13 — Schedule screen-off shortcut for phone playback
+
+- When “Play on phone” starts, PageWave now schedules the supplied `Turn_Off_Screen_without_lock.lnk` to run after five minutes. It searches beside PageWave, the working directory, Desktop, and Downloads.
+- If the shortcut is not found on Windows, PageWave runs the same PowerShell display-off command directly. Stopping the phone server or closing PageWave cancels the timer; this affects only the display, not system sleep or locking.
+- Checks: compilation, diff validation, and phone playback regression tests passed.
