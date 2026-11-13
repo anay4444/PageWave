@@ -202,6 +202,12 @@ class PhoneAudioServer:
 button{{font:inherit;padding:8px 14px;margin-top:12px}}</style>
 <h1 id="title">{title}</h1><p>Playing from PageWave on this computer.</p>
 <audio id="audio" controls autoplay preload="auto" src="{audio_url}"></audio>
+<div id="autoplayPrompt" role="dialog" aria-live="polite"
+ style="background:#1d2a3d;border:1px solid #55708f;border-radius:10px;padding:14px;margin-top:16px">
+ <strong>Allow seamless Auto-next</strong>
+ <div>Your browser needs one tap before it can start the next chapter automatically.</div>
+ <button id="unlock" type="button">Enable Auto-next</button>
+</div>
 <div><button id="next" type="button" style="display:none">Next chapter</button>
 <span id="status" aria-live="polite">Auto-next is preparing the next chapter…</span></div>
 <div style="margin-top:18px">Sleep timer:
@@ -220,9 +226,27 @@ const nextButton = document.getElementById("next");
 const sleepSelect = document.getElementById("sleep");
 const setSleep = document.getElementById("setSleep");
 const sleepStatus = document.getElementById("sleepStatus");
+const autoplayPrompt = document.getElementById("autoplayPrompt");
+const unlockButton = document.getElementById("unlock");
 const stateUrl = "{state_url}";
 const sleepUrl = stateUrl.replace("/state?", "/sleep?");
 let currentChapter = {int(initial_chapter) + 1 if initial_chapter is not None else "null"};
+let autoplayUnlocked = false;
+function markAutoplayUnlocked() {{
+  autoplayUnlocked = true;
+  autoplayPrompt.style.display = "none";
+  status.textContent = "Auto-next: ON";
+}}
+async function unlockAutoplay() {{
+  try {{
+    await player.play();
+    markAutoplayUnlocked();
+  }} catch (_error) {{
+    status.textContent = "Tap the audio Play button once, then enable Auto-next.";
+  }}
+}}
+unlockButton.addEventListener("click", unlockAutoplay);
+player.addEventListener("play", markAutoplayUnlocked, {{ once: true }});
 async function loadNextChapter(automatic) {{
   try {{
     const chapterQuery = currentChapter === null ? "" : "&chapter=" + currentChapter;
@@ -261,9 +285,12 @@ async function loadNextChapter(automatic) {{
       player.load();
     }});
     await player.play();
+    autoplayUnlocked = true;
+    autoplayPrompt.style.display = "none";
     status.textContent = "";
   }} catch (_error) {{
-    status.textContent = "Next chapter loaded; tap Play if your browser blocked automatic playback.";
+    status.textContent = "Browser blocked Auto-next. Tap Enable Auto-next once.";
+    autoplayPrompt.style.display = "block";
     nextButton.style.display = "inline-block";
   }}
 }}
