@@ -246,6 +246,12 @@ class ReliabilityFixTests(unittest.TestCase):
         finally:
             server.stop()
 
+    def test_sleep_timer_options_are_bounded(self):
+        self.assertIn(5, reader.SLEEP_TIMER_OPTIONS)
+        self.assertIn(120, reader.SLEEP_TIMER_OPTIONS)
+        self.assertNotIn(1, reader.SLEEP_TIMER_OPTIONS)
+        self.assertNotIn(121, reader.SLEEP_TIMER_OPTIONS)
+
     def test_phone_state_can_serve_next_legacy_cache_file(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

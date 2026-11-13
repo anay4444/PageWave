@@ -136,3 +136,12 @@ This is the concise, repository-shared handoff for Codex and GitHub Copilot. It 
 - Fix: bounded preload windows now chain forward automatically using a cursor. Each window remains limited to four chapters for memory safety, then the next window starts until all chapters are ready or the user cancels. The stop action also cancels a queued next window.
 - Other improvement opportunities: add a visible pause/resume state, configurable lookahead size, retry failed chapters with backoff, prioritize the next phone chapter, expose estimated remaining time, add an explicit “keep computer awake” toggle, and provide a tray/background mode.
 - Checks: preload lifecycle regression tests, compilation, and `git diff --check` passed.
+
+## 2026-11-13 — Add background mode, phone-next priority, and shared sleep timer
+
+- Added optional Windows tray/background mode using `pystray`; if the optional dependency is unavailable, PageWave still offers a safe taskbar-minimized background mode. Restore and Exit actions are available from the tray menu.
+- Phone playback now starts/continues future preload when the phone player opens, and phone Auto-next waits for a chapter that is still being generated instead of stopping at the boundary.
+- Added a shared sleep timer with 5, 10, 15, 30, 45, 60, 90, and 120 minute choices. Windows and the phone page can set the same timer; expiry stops desktop playback, disables Auto-next, and pauses the phone player.
+- Added a Windows background keep-awake path and preserved cleanup when the phone server or PageWave closes.
+- Other possible improvements remain: true audio crossfade, pre-decoding the next desktop chapter, retry/backoff for failed synthesis, configurable preload window, persistent timer settings, and a service/task-scheduler mode that survives app restarts.
+- Checks: targeted feature tests, Python compilation, and `git diff --check` passed.

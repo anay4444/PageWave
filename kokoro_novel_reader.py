@@ -25,6 +25,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+try:
+    import pystray
+    from PIL import Image, ImageDraw
+except (ImportError, OSError):
+    pystray = None
+    Image = None
+    ImageDraw = None
+
 OPTIONAL_IMPORT_ERRORS = []
 try:
     import sounddevice as sd
@@ -66,6 +74,7 @@ PHONE_CAST_PORT = 8765
 PHONE_KEEP_AWAKE_FLAGS = 0x80000000 | 0x00000001
 PHONE_SCREEN_OFF_DELAY_MS = 5 * 60 * 1000
 PHONE_SCREEN_OFF_SHORTCUT_NAME = "Turn_Off_Screen_without_lock.lnk"
+SLEEP_TIMER_OPTIONS = (5, 10, 15, 30, 45, 60, 90, 120)
 
 VOICE_OPTIONS = {
     "Nicole (US female, soft)": "af_nicole",
@@ -109,10 +118,13 @@ def _preload_window(total_chapters: int, start_index: int,
 class PhoneAudioServer:
     """Serve loaded chapter audio and cached auto-next chapters locally."""
 
-    def __init__(self, audio_path_getter, title_getter, state_getter=None):
+    def __init__(self, audio_path_getter, title_getter, state_getter=None,
+                 sleep_state_getter=None, sleep_timer_setter=None):
         self._audio_path_getter = audio_path_getter
         self._title_getter = title_getter
         self._state_getter = state_getter
+        self._sleep_state_getter = sleep_state_getter
+        self._sleep_timer_setter = sleep_timer_setter
         self._token = secrets.token_urlsafe(18)
         self._server = None
         self._thread = None
@@ -135,6 +147,8 @@ class PhoneAudioServer:
                         owner._serve_page(self)
                     elif urllib.parse.urlsplit(self.path).path == "/state":
                         owner._serve_state(self, query)
+                    elif urllib.parse.urlsplit(self.path).path == "/sleep":
+                        owner._serve_sleep(self, query)
                     elif urllib.parse.urlsplit(self.path).path == "/audio":
                         owner._serve_audio(self, query)
                     else:
@@ -190,12 +204,24 @@ button{{font:inherit;padding:8px 14px;margin-top:12px}}</style>
 <audio id="audio" controls autoplay preload="auto" src="{audio_url}"></audio>
 <div><button id="next" type="button">Next chapter</button>
 <span id="status" aria-live="polite">Auto-next: ON</span></div>
+<div style="margin-top:18px">Sleep timer:
+<select id="sleep"><option value="0">Off</option>
+<option value="5">5 min</option><option value="10">10 min</option>
+<option value="15">15 min</option><option value="30">30 min</option>
+<option value="45">45 min</option><option value="60">1 hour</option>
+<option value="90">1.5 hours</option><option value="120">2 hours</option></select>
+<button id="setSleep" type="button">Set timer</button>
+<span id="sleepStatus" aria-live="polite"></span></div>
 <script>
 const player = document.getElementById("audio");
 const title = document.getElementById("title");
 const status = document.getElementById("status");
 const nextButton = document.getElementById("next");
+const sleepSelect = document.getElementById("sleep");
+const setSleep = document.getElementById("setSleep");
+const sleepStatus = document.getElementById("sleepStatus");
 const stateUrl = "{state_url}";
+const sleepUrl = stateUrl.replace("/state?", "/sleep?");
 let currentChapter = {int(initial_chapter) + 1 if initial_chapter is not None else "null"};
 async function loadNextChapter(automatic) {{
   try {{
@@ -242,6 +268,21 @@ async function loadNextChapter(automatic) {{
 }}
 nextButton.addEventListener("click", () => loadNextChapter(false));
 player.addEventListener("ended", () => loadNextChapter(true));
+setSleep.addEventListener("click", async () => {{
+  const result = await fetch(sleepUrl + "&minutes=" + sleepSelect.value + "&_=" + Date.now()).then(response => response.json());
+  sleepStatus.textContent = result.message || "Timer updated";
+}});
+setInterval(async () => {{
+  try {{
+    const result = await fetch(sleepUrl + "&_=" + Date.now()).then(response => response.json());
+    if (result.expired) {{
+      player.pause();
+      status.textContent = "Sleep timer ended.";
+    }} else if (result.remaining_seconds > 0) {{
+      sleepStatus.textContent = " " + Math.ceil(result.remaining_seconds / 60) + " min remaining";
+    }}
+  }} catch (_error) {{}}
+}}, 15000);
 </script>
 """
         encoded = body.encode("utf-8")
@@ -273,7 +314,31 @@ player.addEventListener("ended", () => loadNextChapter(true));
                 if next_path and next_path.is_file() and chapter is not None else ""
             ),
         }
+        if self._sleep_state_getter:
+            payload["sleep"] = self._sleep_state_getter()
         encoded = json.dumps(payload).encode("utf-8")
+        handler.send_response(200)
+        handler.send_header("Content-Type", "application/json; charset=utf-8")
+        handler.send_header("Cache-Control", "no-store")
+        handler.send_header("Content-Length", str(len(encoded)))
+        handler.end_headers()
+        handler.wfile.write(encoded)
+
+    def _serve_sleep(self, handler, query):
+        minutes_text = query.get("minutes", [None])[0]
+        if minutes_text is not None:
+            try:
+                minutes = int(minutes_text)
+            except ValueError:
+                handler.send_error(400, "Invalid timer")
+                return
+            if self._sleep_timer_setter is None:
+                handler.send_error(503, "Sleep timer unavailable")
+                return
+            result = self._sleep_timer_setter(minutes)
+        else:
+            result = self._sleep_state_getter() if self._sleep_state_getter else {}
+        encoded = json.dumps(result).encode("utf-8")
         handler.send_response(200)
         handler.send_header("Content-Type", "application/json; charset=utf-8")
         handler.send_header("Cache-Control", "no-store")
@@ -700,9 +765,16 @@ class NovelReader:
             lambda: self.current_audio_path,
             lambda: f"Chapter {self.chapter_idx + 1} of {len(self.chapters)}",
             self._phone_audio_state,
+            self._sleep_timer_state,
+            self._set_sleep_timer_from_phone,
         )
         self.phone_screen_off_after = None
         self.phone_screen_off_shortcut: Path | None = None
+        self.sleep_timer_deadline: float | None = None
+        self.sleep_timer_minutes = 0
+        self.sleep_timer_expired = False
+        self.tray_icon = None
+        self.tray_thread = None
         self.loaded_audio_voice_id: str | None = None
         self.samplerate = 0
         self._audio_load_generation = 0
@@ -858,6 +930,8 @@ class NovelReader:
             left, text="Stop loading future chapters", command=self.stop_preload, state="disabled"
         )
         self.preload_stop_btn.pack(anchor="e", padx=2, pady=(0, 8))
+        ttk.Button(left, text="Sleep timer…", command=self.show_sleep_timer).pack(anchor="e", padx=2, pady=(0, 4))
+        ttk.Button(left, text="Run in background", command=self.enter_background_mode).pack(anchor="e", padx=2, pady=(0, 8))
         ttk.Label(right, text="READING", style="Section.TLabel", padding=(4, 4)).pack(anchor="w")
         ttk.Label(right, text="Click a paragraph to start there · the current paragraph is highlighted", padding=(4, 0, 4, 7), foreground=colors["muted"]).pack(anchor="w")
         text_frame = ttk.Frame(right)
@@ -1745,6 +1819,7 @@ class NovelReader:
             )
             return
         self._schedule_phone_screen_off()
+        self._start_novel_preload()
         dialog = tk.Toplevel(self.root)
         dialog.title("Play PageWave on your phone")
         dialog.geometry("560x260")
@@ -1772,6 +1847,60 @@ class NovelReader:
         self.root.clipboard_append(url)
         self.root.update()
         self.status.configure(text="Phone player link copied")
+
+    def _sleep_timer_state(self) -> dict:
+        remaining = 0
+        if self.sleep_timer_deadline is not None:
+            remaining = max(0, int(self.sleep_timer_deadline - time.monotonic()))
+        return {
+            "minutes": self.sleep_timer_minutes,
+            "remaining_seconds": remaining,
+            "expired": self.sleep_timer_expired,
+        }
+
+    def _set_sleep_timer_from_phone(self, minutes: int) -> dict:
+        if minutes not in (0, *SLEEP_TIMER_OPTIONS):
+            return {"message": "Choose a timer between 5 minutes and 2 hours"}
+        self.sleep_timer_minutes = minutes
+        self.sleep_timer_expired = False
+        self.sleep_timer_deadline = time.monotonic() + minutes * 60 if minutes else None
+        self._schedule_after(0, lambda: self.status.configure(
+            text=f"Sleep timer: {minutes} minutes" if minutes else "Sleep timer off"
+        ))
+        return {
+            "message": f"Sleep timer set for {minutes} minutes" if minutes else "Sleep timer turned off",
+            **self._sleep_timer_state(),
+        }
+
+    def show_sleep_timer(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Sleep timer")
+        dialog.geometry("330x170")
+        dialog.transient(self.root)
+        ttk.Label(dialog, text="Stop Windows and phone playback after:").pack(anchor="w", padx=18, pady=(18, 8))
+        value = tk.StringVar(value=str(self.sleep_timer_minutes or 30))
+        ttk.Combobox(dialog, textvariable=value, state="readonly",
+                     values=["0", *[str(item) for item in SLEEP_TIMER_OPTIONS]]).pack(anchor="w", padx=18)
+        ttk.Button(dialog, text="Set timer", command=lambda: (self.set_sleep_timer(int(value.get())), dialog.destroy())).pack(
+            anchor="e", padx=18, pady=18
+        )
+
+    def set_sleep_timer(self, minutes: int):
+        if minutes not in (0, *SLEEP_TIMER_OPTIONS):
+            return
+        self.sleep_timer_minutes = minutes
+        self.sleep_timer_expired = False
+        self.sleep_timer_deadline = time.monotonic() + minutes * 60 if minutes else None
+        self.status.configure(text=f"Sleep timer: {minutes} minutes" if minutes else "Sleep timer off")
+
+    def _sleep_timer_tick(self):
+        if self.sleep_timer_deadline is not None and time.monotonic() >= self.sleep_timer_deadline:
+            self.sleep_timer_deadline = None
+            self.sleep_timer_expired = True
+            self.sleep_timer_minutes = 0
+            self.auto_next.set(False)
+            self.stop_audio()
+            self.status.configure(text="Sleep timer ended; playback stopped")
 
     def _find_phone_screen_off_shortcut(self) -> Path | None:
         candidates = [
@@ -2357,6 +2486,7 @@ class NovelReader:
             self._play_from(self.duration * sum(weights[:line_no]) / max(1, sum(weights)))
 
     def _tick(self):
+        self._sleep_timer_tick()
         if self.playing and self.started_at is not None and self.audio is not None:
             elapsed = self.offset + (time.monotonic() - self.started_at)
             if time.monotonic() - getattr(self, "last_progress_save", 0.0) >= 5:
@@ -2374,7 +2504,7 @@ class NovelReader:
                     self.offset = 0.0
                     self.show_chapter()
                     self._save_progress(offset=0.0)
-                    self._schedule_after(350, self._generate_and_play)
+                    self._schedule_after(0, self._generate_and_play)
                 else:
                     self.status.configure(text="Novel finished" if self.chapter_idx + 1 == len(self.chapters) else "Chapter finished")
             else:
@@ -2395,6 +2525,43 @@ class NovelReader:
                             break
                 self._highlight(line_index, elapsed)
         self._schedule_after(150, self._tick)
+
+    def enter_background_mode(self):
+        if pystray is None or Image is None or ImageDraw is None:
+            self.root.iconify()
+            self.status.configure(text="Running in background; restore PageWave from the taskbar")
+            return
+        if self.tray_icon is not None:
+            self.root.withdraw()
+            return
+        icon_image = Image.new("RGB", (64, 64), "#162235")
+        draw = ImageDraw.Draw(icon_image)
+        draw.rectangle((12, 12, 52, 52), fill="#72ddc0")
+        draw.text((25, 23), "P", fill="#101827")
+
+        def restore(_icon=None, _item=None):
+            self._schedule_after(0, self.restore_from_background)
+
+        def quit_app(_icon=None, _item=None):
+            self._schedule_after(0, self.close)
+
+        menu = pystray.Menu(
+            pystray.MenuItem("Restore PageWave", restore, default=True),
+            pystray.MenuItem("Stop playback", lambda *_: self._schedule_after(0, self.stop_audio)),
+            pystray.MenuItem("Exit", quit_app),
+        )
+        self.tray_icon = pystray.Icon("PageWave", icon_image, "PageWave", menu)
+        self.tray_thread = threading.Thread(target=self.tray_icon.run, daemon=True)
+        self.tray_thread.start()
+        self.root.withdraw()
+
+    def restore_from_background(self):
+        if self._closing:
+            return
+        self.root.deiconify()
+        self.root.state("normal")
+        self.root.lift()
+        self.root.focus_force()
 
     def _timing_index_at(self, elapsed: float) -> int:
         """Keep the nearest spoken paragraph highlighted during inserted pauses."""
@@ -2556,6 +2723,9 @@ class NovelReader:
         self.preload_cancel_event = None
         self._cancel_phone_screen_off()
         self.phone_audio_server.stop()
+        if self.tray_icon is not None:
+            self.tray_icon.stop()
+            self.tray_icon = None
         self.stop_audio()
         self.root.destroy()
 

@@ -6,3 +6,4 @@ soundfile
 pymupdf
 vosk
 audioop-lts; python_version >= "3.13"
+pystray
