@@ -243,6 +243,8 @@ class ReliabilityFixTests(unittest.TestCase):
             body = request.wfile.write.call_args[0][0]
             self.assertIn(b"Waiting for the next chapter", body)
             self.assertIn(b"setTimeout", body)
+            self.assertIn(b'style="display:none"', body)
+            request.send_header.assert_any_call("Cache-Control", "no-store, no-cache, must-revalidate")
         finally:
             server.stop()
 

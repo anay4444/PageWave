@@ -202,8 +202,8 @@ class PhoneAudioServer:
 button{{font:inherit;padding:8px 14px;margin-top:12px}}</style>
 <h1 id="title">{title}</h1><p>Playing from PageWave on this computer.</p>
 <audio id="audio" controls autoplay preload="auto" src="{audio_url}"></audio>
-<div><button id="next" type="button">Next chapter</button>
-<span id="status" aria-live="polite">Auto-next: ON</span></div>
+<div><button id="next" type="button" style="display:none">Next chapter</button>
+<span id="status" aria-live="polite">Auto-next is preparing the next chapter…</span></div>
 <div style="margin-top:18px">Sleep timer:
 <select id="sleep"><option value="0">Off</option>
 <option value="5">5 min</option><option value="10">10 min</option>
@@ -227,7 +227,7 @@ async function loadNextChapter(automatic) {{
   try {{
     const chapterQuery = currentChapter === null ? "" : "&chapter=" + currentChapter;
     let state = null;
-    for (let attempt = 0; attempt < (automatic ? 30 : 1); attempt++) {{
+    for (let attempt = 0; automatic || attempt < 1; attempt++) {{
       state = await fetch(stateUrl + chapterQuery + "&_=" + Date.now()).then(response => response.json());
       if (state.next_available) break;
       if (!automatic) {{
@@ -235,10 +235,10 @@ async function loadNextChapter(automatic) {{
         return;
       }}
       status.textContent = "Waiting for the next chapter to finish loading…";
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }}
     if (!state || !state.next_available) {{
-      status.textContent = "Next chapter is still loading. Tap Next chapter when it is ready.";
+      status.textContent = "Still preparing the next chapter automatically…";
       return;
     }}
     if (automatic && !state.auto_next) {{
@@ -264,6 +264,7 @@ async function loadNextChapter(automatic) {{
     status.textContent = "";
   }} catch (_error) {{
     status.textContent = "Next chapter loaded; tap Play if your browser blocked automatic playback.";
+    nextButton.style.display = "inline-block";
   }}
 }}
 nextButton.addEventListener("click", () => loadNextChapter(false));
@@ -288,6 +289,8 @@ setInterval(async () => {{
         encoded = body.encode("utf-8")
         handler.send_response(200)
         handler.send_header("Content-Type", "text/html; charset=utf-8")
+        handler.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        handler.send_header("Pragma", "no-cache")
         handler.send_header("Content-Length", str(len(encoded)))
         handler.end_headers()
         handler.wfile.write(encoded)
