@@ -3,6 +3,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import sys
 import tempfile
 import time
@@ -15,6 +16,7 @@ MAX_SPEED = 4.0
 VOICE_IDS = {"af_nicole", "af_heart", "af_sarah", "af_bella", "am_adam", "bm_george", "bf_emma"}
 MAX_RENDER_DURATION_SECONDS = 6 * 60 * 60
 MAX_PARAGRAPH_CHARACTERS = 50000
+MAX_TTS_CHUNK_CHARACTERS = 320
 MIN_AUDIO_SAMPLE_RATE = 8000
 MAX_AUDIO_SAMPLE_RATE = 192000
 
@@ -32,6 +34,45 @@ def emit(event: str, job_id: str, **fields) -> None:
 
 def _has_speakable_characters(text: str) -> bool:
     return any(character.isalnum() for character in text)
+
+
+def _split_tts_chunks(text: str, limit: int = MAX_TTS_CHUNK_CHARACTERS) -> list[str]:
+    """Keep long paragraphs below Kokoro's phoneme limit without losing text."""
+    sentences = [item.strip() for item in re.split(r"(?<=[.!?])\s+", text) if item.strip()]
+    chunks = []
+    current = ""
+    for sentence in sentences or [text.strip()]:
+        words = sentence.split()
+        for word in words:
+            candidate = f"{current} {word}".strip()
+            if current and len(candidate) > limit:
+                chunks.append(current)
+                current = word
+            else:
+                current = candidate
+    if current:
+        chunks.append(current)
+    return chunks or [text]
+
+
+def _create_with_long_text_fallback(koko, text, voice, speed):
+    import numpy as np
+    try:
+        return koko.create(text, voice=voice, speed=float(speed), lang="en-us")
+    except Exception as exc:
+        message = str(exc).casefold()
+        if not isinstance(exc, IndexError) and "phoneme" not in message and "out of bounds" not in message:
+            raise
+        parts = []
+        sample_rate = None
+        for chunk in _split_tts_chunks(text):
+            samples, chunk_rate = koko.create(chunk, voice=voice, speed=float(speed), lang="en-us")
+            if sample_rate is None:
+                sample_rate = int(chunk_rate)
+            if int(chunk_rate) != sample_rate:
+                raise ValueError("Kokoro returned inconsistent sample rates for a split paragraph")
+            parts.append(np.asarray(samples, dtype=np.float32).reshape(-1))
+        return np.concatenate(parts), sample_rate
 
 
 def sha256_file(path: Path) -> str:
@@ -95,7 +136,9 @@ def render_one(koko, paragraphs, output_wav, voice, speed, chapter_index, job_id
                      skipped=True)
                 continue
             try:
-                samples, sample_rate = koko.create(text, voice=voice, speed=float(speed), lang="en-us")
+                samples, sample_rate = _create_with_long_text_fallback(
+                    koko, text, voice, speed
+                )
             except Exception as exc:
                 timings.append({"text": text, "start": position_frames / rate if rate else 0.0,
                                 "end": position_frames / rate if rate else 0.0})

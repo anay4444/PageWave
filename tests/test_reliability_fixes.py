@@ -439,6 +439,20 @@ class ReliabilityFixTests(unittest.TestCase):
             Path(str(output) + ".timing.json").write_text("[]", encoding="utf-8")
             self.assertFalse(reader.NovelReader._cached_audio_is_valid(output))
 
+    def test_worker_splits_paragraph_when_kokoro_hits_phoneme_limit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "chapter.wav"
+            long_text = " ".join(["word"] * 180)
+            fake = FakeKokoro(
+                [IndexError("index 510 is out of bounds for axis 0 with size 510")]
+                + [(np.ones(240, dtype=np.float32), 24000)] * 4
+            )
+            with contextlib.redirect_stdout(io.StringIO()):
+                worker.render_one(fake, [long_text], output, "af_nicole", 1.0, 54, "job")
+            timings = json.loads(Path(str(output) + ".timing.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(timings), 1)
+            self.assertTrue(output.is_file())
+
     def test_worker_skips_punctuation_only_paragraph_without_synthesis_failure(self):
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "chapter.wav"
